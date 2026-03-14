@@ -316,16 +316,82 @@ sudo unbound-control flush_zone example.com
 
 ---
 
-## Tailscale — accès distant sans NAT entrant
+## Vaultwarden — gestionnaire de mots de passe
+
+Serveur Bitwarden auto-hébergé, léger et compatible avec toutes les extensions navigateur et apps mobiles Bitwarden.
+
+### Installation
+
+```bash
+mkdir -p ~/pidesk/vaultwarden && cd ~/pidesk/vaultwarden
+
+# Générer un certificat auto-signé (HTTPS requis par Bitwarden)
+openssl req -x509 -nodes -days 3650 \
+  -newkey rsa:2048 \
+  -keyout ssl.key \
+  -out ssl.crt \
+  -subj "/CN=pidesk.local"
+```
+
+Lancer le conteneur :
+
+```bash
+docker run -d --name vaultwarden \
+  -p 8222:80 \
+  -e TZ=Europe/Paris \
+  -e DOMAIN=https://<IP>:8222 \
+  -e SIGNUPS_ALLOWED=true \
+  -e ROCKET_TLS='{certs="/ssl/ssl.crt",key="/ssl/ssl.key"}' \
+  -v ./data:/data \
+  -v ./ssl.crt:/ssl/ssl.crt:ro \
+  -v ./ssl.key:/ssl/ssl.key:ro \
+  --restart unless-stopped \
+  vaultwarden/server:latest
+```
+
+> Remplacer `<IP>` par l'IP du Pi.
+
+### Premier accès
+
+Aller sur `https://<IP>:8222`, accepter l'avertissement du certificat auto-signé, puis créer son compte.
+
+### Sécurisation post-installation
+
+Une fois le compte créé, désactiver les inscriptions :
+
+```bash
+docker stop vaultwarden && docker rm vaultwarden
+
+docker run -d --name vaultwarden \
+  -p 8222:80 \
+  -e TZ=Europe/Paris \
+  -e DOMAIN=https://<IP>:8222 \
+  -e SIGNUPS_ALLOWED=false \
+  -e ROCKET_TLS='{certs="/ssl/ssl.crt",key="/ssl/ssl.key"}' \
+  -v ./data:/data \
+  -v ./ssl.crt:/ssl/ssl.crt:ro \
+  -v ./ssl.key:/ssl/ssl.key:ro \
+  --restart unless-stopped \
+  vaultwarden/server:latest
+```
+
+> Les données sont persistées dans `./data`, elles survivent à la recréation du conteneur.
+
+### Extension navigateur
+
+Dans l'extension Bitwarden : paramètres → **Auto-hébergé** → URL du serveur : `https://<IP>:8222`.
+
+> Pour l'accès distant via Tailscale, voir la section suivante.
+
+---
+
+## Tailscale — accès distant à Vaultwarden
 
 Tailscale crée un VPN mesh basé sur WireGuard. Le Pi n'a pas besoin d'IP publique ni de NAT entrant — la connexion sortante vers les serveurs de coordination Tailscale suffit. Le trafic entre appareils est chiffré point-à-point.
 
-```
-Appareil distant ◄──── WireGuard (chiffré P2P) ────► pidesk (derrière CGNAT/4G)
-                          ▲
-                          │ coordination uniquement
-                    Serveurs Tailscale
-```
+### Prérequis
+
+Désactiver le TLS de Pi-hole **avant** d'utiliser Funnel (voir section Pi-hole). Pi-hole v6 en `network_mode: host` écoute sur le port 443 sur toutes les interfaces, ce qui bloque Funnel.
 
 ### Installation
 
@@ -348,30 +414,39 @@ tailscale ip -4
 tailscale status
 ```
 
-Installer Tailscale sur les autres appareils (téléphone, laptop) avec le même compte pour y accéder via l'IP Tailscale.
+### Exposer Vaultwarden
 
-### Funnel — exposer un service sur Internet
-
-Funnel publie un service local sur une URL publique `https://<hostname>.<tailnet>.ts.net`, accessible depuis n'importe quel navigateur sans client Tailscale. Certificat Let's Encrypt automatique.
+Vaultwarden écoute en HTTPS (certificat auto-signé), il faut donc utiliser `https+insecure://` pour que Tailscale accepte de proxifier vers le backend.
 
 ```bash
-# Exposer un port en arrière-plan
-sudo tailscale funnel --bg <port>
+# Accès privé (uniquement les appareils connectés au tailnet)
+sudo tailscale serve --bg https+insecure://localhost:8222
 
-# Exposer un backend HTTPS (certificat auto-signé)
-sudo tailscale funnel --bg https+insecure://localhost:<port>
-
-# Voir les tunnels actifs
-sudo tailscale funnel status
-
-# Couper tous les tunnels
-sudo tailscale funnel off
+# Accès public (n'importe quel navigateur, sans client Tailscale)
+sudo tailscale funnel --bg https+insecure://localhost:8222
 ```
 
-> **Prérequis** : désactiver le TLS de Pi-hole (voir section Pi-hole). Pi-hole v6 en `network_mode: host` écoute sur le port 443 sur toutes les interfaces, ce qui bloque Funnel.
+> `serve` = accès restreint aux appareils du tailnet. `funnel` = accessible sur Internet. Tailscale fournit un certificat Let's Encrypt valide dans les deux cas.
+
+Accès : `https://<hostname>.<tailnet>.ts.net`
+
+Dans l'extension Bitwarden, l'URL du serveur auto-hébergé peut être remplacée par cette adresse pour un accès distant.
+
+### Gestion
+
+```bash
+# Voir ce qui est exposé
+sudo tailscale serve status
+sudo tailscale funnel status
+
+# Couper
+sudo tailscale serve off
+sudo tailscale funnel off
+```
 
 ---
 
 ## Prochaines étapes
 
+- [ ] Caddy reverse proxy (endpoint unique pour tous les services)
 - [ ] Installation de deCONZ (Phoscon / RasPBee 2)
