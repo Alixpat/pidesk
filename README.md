@@ -115,6 +115,19 @@ Interface web : `http://<IP>/admin`
 docker exec -it pihole pihole setpassword
 ```
 
+### Désactiver le TLS de Pi-hole
+
+Pi-hole v6 active le TLS par défaut et écoute sur le port 443 sur toutes les interfaces. Cela entre en conflit avec Tailscale Funnel (voir section Tailscale). Pour désactiver :
+
+```bash
+docker exec -it pihole pihole-FTL --config webserver.tls.cert ""
+docker exec -it pihole pihole-FTL --config webserver.port "80o,[::]:80o"
+docker restart pihole
+```
+
+> Les deux commandes sont nécessaires : supprimer le certificat **et** retirer le port 443 de l'écoute. Sans la seconde, Pi-hole tente de démarrer SSL sans certificat et le webserver ne se lance pas du tout.
+> L'accès reste disponible en HTTP sur le port 80, ce qui est suffisant en réseau local.
+
 ### Configuration du routeur
 
 Configurer le serveur DHCP du routeur pour distribuer l'IP du Pi comme seul serveur DNS (option DHCP 6). Ne pas ajouter de DNS secondaire, sinon les clients contournent Pi-hole aléatoirement.
@@ -300,6 +313,62 @@ sudo unbound-control flush_zone example.com
 >     control-interface: 127.0.0.1' | sudo tee /etc/unbound/unbound.conf.d/remote.conf
 > sudo systemctl restart unbound
 > ```
+
+---
+
+## Tailscale — accès distant sans NAT entrant
+
+Tailscale crée un VPN mesh basé sur WireGuard. Le Pi n'a pas besoin d'IP publique ni de NAT entrant — la connexion sortante vers les serveurs de coordination Tailscale suffit. Le trafic entre appareils est chiffré point-à-point.
+
+```
+Appareil distant ◄──── WireGuard (chiffré P2P) ────► pidesk (derrière CGNAT/4G)
+                          ▲
+                          │ coordination uniquement
+                    Serveurs Tailscale
+```
+
+### Installation
+
+Installer directement sur l'hôte (pas dans Docker) — Tailscale a besoin d'une interface réseau système :
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+
+Un lien d'authentification s'affiche. L'ouvrir dans un navigateur et se connecter (GitHub, Google, email).
+
+### Vérification
+
+```bash
+# IP Tailscale du Pi (en 100.x.x.x)
+tailscale ip -4
+
+# Appareils connectés au tailnet
+tailscale status
+```
+
+Installer Tailscale sur les autres appareils (téléphone, laptop) avec le même compte pour y accéder via l'IP Tailscale.
+
+### Funnel — exposer un service sur Internet
+
+Funnel publie un service local sur une URL publique `https://<hostname>.<tailnet>.ts.net`, accessible depuis n'importe quel navigateur sans client Tailscale. Certificat Let's Encrypt automatique.
+
+```bash
+# Exposer un port en arrière-plan
+sudo tailscale funnel --bg <port>
+
+# Exposer un backend HTTPS (certificat auto-signé)
+sudo tailscale funnel --bg https+insecure://localhost:<port>
+
+# Voir les tunnels actifs
+sudo tailscale funnel status
+
+# Couper tous les tunnels
+sudo tailscale funnel off
+```
+
+> **Prérequis** : désactiver le TLS de Pi-hole (voir section Pi-hole). Pi-hole v6 en `network_mode: host` écoute sur le port 443 sur toutes les interfaces, ce qui bloque Funnel.
 
 ---
 
