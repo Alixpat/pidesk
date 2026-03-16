@@ -117,7 +117,7 @@ docker exec -it pihole pihole setpassword
 
 ### Désactiver le TLS de Pi-hole
 
-Pi-hole v6 active le TLS par défaut et écoute sur le port 443 sur toutes les interfaces. Cela entre en conflit avec Tailscale Funnel (voir section Tailscale). Pour désactiver :
+Pi-hole v6 active le TLS par défaut et écoute sur le port 443 sur toutes les interfaces. En `network_mode: host`, cela peut entrer en conflit avec d'autres services sur le port 443. Pour désactiver :
 
 ```bash
 docker exec -it pihole pihole-FTL --config webserver.tls.cert ""
@@ -318,135 +318,110 @@ sudo unbound-control flush_zone example.com
 
 ## Vaultwarden — gestionnaire de mots de passe
 
-Serveur Bitwarden auto-hébergé, léger et compatible avec toutes les extensions navigateur et apps mobiles Bitwarden.
+Serveur Bitwarden auto-hébergé, léger et compatible avec toutes les extensions navigateur et apps mobiles Bitwarden. L'accès distant est assuré par un tunnel Cloudflare (voir section suivante).
 
 ### Installation
 
 ```bash
 mkdir -p ~/pidesk/vaultwarden && cd ~/pidesk/vaultwarden
-
-# Générer un certificat auto-signé (HTTPS requis par Bitwarden)
-openssl req -x509 -nodes -days 3650 \
-  -newkey rsa:2048 \
-  -keyout ssl.key \
-  -out ssl.crt \
-  -subj "/CN=pidesk.local"
 ```
 
-Lancer le conteneur :
+Créer `docker-compose.yml` :
+
+```yaml
+services:
+  vaultwarden:
+    container_name: vaultwarden
+    image: vaultwarden/server:latest
+    environment:
+      TZ: Europe/Paris
+      DOMAIN: https://<SUBDOMAIN>.<DOMAIN>
+      SIGNUPS_ALLOWED: "true"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  cloudflared:
+    container_name: cloudflared
+    image: cloudflare/cloudflared:latest
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: "<TUNNEL_TOKEN>"
+    restart: unless-stopped
+    depends_on:
+      - vaultwarden
+```
+
+> Remplacer `<SUBDOMAIN>.<DOMAIN>` par le FQDN choisi (ex. `vault.example.fr`) et `<TUNNEL_TOKEN>` par le token du tunnel Cloudflare.
 
 ```bash
-docker run -d --name vaultwarden \
-  -p 8222:80 \
-  -e TZ=Europe/Paris \
-  -e DOMAIN=https://<IP>:8222 \
-  -e SIGNUPS_ALLOWED=true \
-  -e ROCKET_TLS='{certs="/ssl/ssl.crt",key="/ssl/ssl.key"}' \
-  -v ./data:/data \
-  -v ./ssl.crt:/ssl/ssl.crt:ro \
-  -v ./ssl.key:/ssl/ssl.key:ro \
-  --restart unless-stopped \
-  vaultwarden/server:latest
+docker compose up -d
 ```
 
-> Remplacer `<IP>` par l'IP du Pi.
+### Configuration du tunnel Cloudflare
+
+1. Se connecter au [dashboard Cloudflare Zero Trust](https://one.dash.cloudflare.com/)
+2. **Networks → Tunnels → Create a tunnel**
+3. Choisir **Cloudflared** comme type de connecteur
+4. Nommer le tunnel (ex. `pidesk-vaultwarden`)
+5. Copier le token affiché → le reporter dans `<TUNNEL_TOKEN>` du compose
+6. Ajouter un **Public Hostname** :
+   - **Subdomain** : `vault` (ou autre)
+   - **Domain** : sélectionner le domaine géré dans Cloudflare
+   - **Service** : `HTTP` — `vaultwarden:80`
+
+> Pas besoin de certificat auto-signé ni de TLS côté Vaultwarden : Cloudflare termine le TLS avec un certificat Let's Encrypt valide sur le domaine. Le trafic entre `cloudflared` et `vaultwarden` reste en HTTP sur le réseau Docker interne.
 
 ### Premier accès
 
-Aller sur `https://<IP>:8222`, accepter l'avertissement du certificat auto-signé, puis créer son compte.
+Aller sur `https://<SUBDOMAIN>.<DOMAIN>` et créer son compte.
 
 ### Sécurisation post-installation
 
 Une fois le compte créé, désactiver les inscriptions :
 
 ```bash
-docker stop vaultwarden && docker rm vaultwarden
-
-docker run -d --name vaultwarden \
-  -p 8222:80 \
-  -e TZ=Europe/Paris \
-  -e DOMAIN=https://<IP>:8222 \
-  -e SIGNUPS_ALLOWED=false \
-  -e ROCKET_TLS='{certs="/ssl/ssl.crt",key="/ssl/ssl.key"}' \
-  -v ./data:/data \
-  -v ./ssl.crt:/ssl/ssl.crt:ro \
-  -v ./ssl.key:/ssl/ssl.key:ro \
-  --restart unless-stopped \
-  vaultwarden/server:latest
+cd ~/pidesk/vaultwarden
+vi docker-compose.yml
+# Changer SIGNUPS_ALLOWED: "true" → "false"
+docker compose up -d
 ```
 
 > Les données sont persistées dans `./data`, elles survivent à la recréation du conteneur.
 
+### Accès LAN direct (optionnel)
+
+Pour accéder à Vaultwarden sans passer par le tunnel (ex. en cas de coupure Internet) :
+
+```yaml
+services:
+  vaultwarden:
+    # ... (config existante)
+    ports:
+      - "8222:80"
+```
+
+Accès local : `http://<IP>:8222` (HTTP simple, pas de TLS nécessaire en LAN).
+
 ### Extension navigateur
 
-Dans l'extension Bitwarden : paramètres → **Auto-hébergé** → URL du serveur : `https://<IP>:8222`.
+Dans l'extension Bitwarden : paramètres → **Auto-hébergé** → URL du serveur : `https://<SUBDOMAIN>.<DOMAIN>`.
 
-> Pour l'accès distant via Tailscale, voir la section suivante.
-
----
-
-## Tailscale — accès distant à Vaultwarden
-
-Tailscale crée un VPN mesh basé sur WireGuard. Le Pi n'a pas besoin d'IP publique ni de NAT entrant — la connexion sortante vers les serveurs de coordination Tailscale suffit. Le trafic entre appareils est chiffré point-à-point.
-
-### Prérequis
-
-Désactiver le TLS de Pi-hole **avant** d'utiliser Funnel (voir section Pi-hole). Pi-hole v6 en `network_mode: host` écoute sur le port 443 sur toutes les interfaces, ce qui bloque Funnel.
-
-### Installation
-
-Installer directement sur l'hôte (pas dans Docker) — Tailscale a besoin d'une interface réseau système :
+### Gestion du tunnel
 
 ```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up
-```
+# Logs du tunnel
+docker logs -f cloudflared
 
-Un lien d'authentification s'affiche. L'ouvrir dans un navigateur et se connecter (GitHub, Google, email).
+# Vérifier l'état du tunnel dans le dashboard Cloudflare Zero Trust
+# Networks → Tunnels → le tunnel doit être "Healthy"
 
-### Vérification
-
-```bash
-# IP Tailscale du Pi (en 100.x.x.x)
-tailscale ip -4
-
-# Appareils connectés au tailnet
-tailscale status
-```
-
-### Exposer Vaultwarden
-
-Vaultwarden écoute en HTTPS (certificat auto-signé), il faut donc utiliser `https+insecure://` pour que Tailscale accepte de proxifier vers le backend.
-
-```bash
-# Accès privé (uniquement les appareils connectés au tailnet)
-sudo tailscale serve --bg https+insecure://localhost:8222
-
-# Accès public (n'importe quel navigateur, sans client Tailscale)
-sudo tailscale funnel --bg https+insecure://localhost:8222
-```
-
-> `serve` = accès restreint aux appareils du tailnet. `funnel` = accessible sur Internet. Tailscale fournit un certificat Let's Encrypt valide dans les deux cas.
-
-Accès : `https://<hostname>.<tailnet>.ts.net`
-
-Dans l'extension Bitwarden, l'URL du serveur auto-hébergé peut être remplacée par cette adresse pour un accès distant.
-
-### Gestion
-
-```bash
-# Voir ce qui est exposé
-sudo tailscale serve status
-sudo tailscale funnel status
-
-# Couper
-sudo tailscale serve off
-sudo tailscale funnel off
+# Redémarrer le tunnel
+docker compose restart cloudflared
 ```
 
 ---
 
 ## Prochaines étapes
 
-- [ ] Caddy reverse proxy (endpoint unique pour tous les services)
 - [ ] Installation de deCONZ (Phoscon / RasPBee 2)
