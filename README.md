@@ -337,6 +337,9 @@ services:
       TZ: Europe/Paris
       DOMAIN: https://<SUBDOMAIN>.<DOMAIN>
       SIGNUPS_ALLOWED: "true"
+      INVITATIONS_ALLOWED: "false"
+      SHOW_PASSWORD_HINT: "false"
+      PASSWORD_HINTS_ALLOWED: "false"
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -419,6 +422,54 @@ docker logs -f cloudflared
 # Redémarrer le tunnel
 docker compose restart cloudflared
 ```
+
+### Sécurisation Cloudflare
+
+Le tunnel Cloudflare protège déjà contre l'exposition directe (aucun port ouvert sur la box, pas d'IP publique). Les données du coffre sont chiffrées côté client (AES-256) — même en cas de compromission du serveur, les mots de passe restent illisibles sans le master password.
+
+Les règles suivantes ajoutent une protection supplémentaire au niveau de l'edge Cloudflare, avant que le trafic n'atteigne le Pi.
+
+#### Security rules
+
+Dans le dashboard Cloudflare du domaine : **Security → Security rules → Create rule**.
+
+**Règle : `Block Non-FR`** — bloque tout le trafic provenant de l'extérieur de la France :
+
+```
+(http.host eq "<SUBDOMAIN>.<DOMAIN>") and (ip.geoip.country ne "FR")
+```
+
+Action : **Block**
+
+> Si besoin d'accéder depuis l'étranger (voyage), désactiver temporairement cette règle dans le dashboard.
+
+#### Rate limiting rules
+
+Dans le dashboard Cloudflare du domaine : **Security → Security rules → Create rule** (onglet rate limiting).
+
+**Règle : `Rate Limit Login`** — limite les tentatives de connexion (anti brute-force) sur l'endpoint d'authentification :
+
+```
+(http.host eq "<SUBDOMAIN>.<DOMAIN>") and (http.request.uri.path contains "/identity/connect/token")
+```
+
+Action : **Block**
+
+> Le plan gratuit Cloudflare offre 1 rate limiting rule. L'endpoint `/identity/connect/token` est l'endpoint OAuth2 utilisé par tous les clients Bitwarden (extension, app mobile, web vault) pour l'authentification.
+
+### Sauvegarde
+
+La base SQLite `./data/db.sqlite3` contient tous les comptes et coffres chiffrés. Mettre en place une sauvegarde régulière :
+
+```bash
+# Créer le répertoire de backups
+mkdir -p ~/pidesk/vaultwarden/backups
+
+# Ajouter dans crontab -e
+0 3 * * * cp ~/pidesk/vaultwarden/data/db.sqlite3 ~/pidesk/vaultwarden/backups/db-$(date +\%F).sqlite3
+```
+
+> Idéalement, synchroniser les backups vers une autre machine via rsync.
 
 ---
 
