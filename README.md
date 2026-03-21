@@ -496,10 +496,18 @@ docker run --rm -v $(pwd)/config:/data eclipse-mosquitto:2 \
   mosquitto_passwd -c -b /data/passwd <USER> <PASSWORD>
 ```
 
+Fixer les permissions pour l'utilisateur `mosquitto` du conteneur (UID 1883) :
+
+```bash
+sudo chown 1883:1883 config/passwd
+chmod 600 config/passwd
+```
+
 > Remplacer `<USER>` et `<PASSWORD>` par les identifiants souhaités. Pour ajouter d'autres utilisateurs par la suite, retirer le flag `-c` (qui recrée le fichier) :
 > ```bash
 > docker run --rm -v $(pwd)/config:/data eclipse-mosquitto:2 \
 >   mosquitto_passwd -b /data/passwd <USER2> <PASSWORD2>
+> sudo chown 1883:1883 config/passwd
 > ```
 
 > **Important** : le fichier `passwd` doit exister **avant** de lancer le conteneur, sinon Mosquitto refuse de démarrer.
