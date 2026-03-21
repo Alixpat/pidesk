@@ -77,29 +77,13 @@ Bloqueur de publicités et trackers au niveau DNS pour tout le réseau.
 
 ### Installation
 
+Le fichier `docker-compose.yml` est dans le répertoire `pihole/` du dépôt.
+
 ```bash
-mkdir -p ~/pidesk/pihole && cd ~/pidesk/pihole
+cd ~/pidesk/pihole
 ```
 
-Créer `docker-compose.yml` :
-
-```yaml
-services:
-  pihole:
-    container_name: pihole
-    image: pihole/pihole:latest
-    network_mode: host
-    environment:
-      TZ: 'Europe/Paris'
-      WEBPASSWORD: 'changeme'
-      FTLCONF_dns_listeningMode: 'all'
-    volumes:
-      - ./etc-pihole:/etc/pihole
-      - ./etc-dnsmasq.d:/etc/dnsmasq.d
-    restart: unless-stopped
-```
-
-> Remplacer `changeme` par le mot de passe souhaité pour l'interface web.
+> Remplacer `changeme` par le mot de passe souhaité pour l'interface web dans `docker-compose.yml`.
 
 ```bash
 docker compose up -d
@@ -176,73 +160,10 @@ grep -r "auto-trust-anchor" /etc/unbound/
 
 S'il existe déjà, ne pas le redéclarer dans la config ci-dessous.
 
-Créer `/etc/unbound/unbound.conf.d/pi-hole.conf` :
+Copier le fichier de configuration depuis le dépôt :
 
-```ini
-server:
-    # ---- Interface et port ----
-    # Écoute uniquement sur localhost, seul Pi-hole peut l'interroger
-    interface: 127.0.0.1
-    # Port 5335 pour ne pas entrer en conflit avec Pi-hole (port 53)
-    port: 5335
-    do-ip4: yes
-    do-ip6: no
-    do-udp: yes
-    do-tcp: yes
-
-    # ---- Contrôle d'accès ----
-    access-control: 127.0.0.0/8 allow
-    access-control: 0.0.0.0/0 refuse
-
-    # ---- Sécurité ----
-    # Refuse les glue records hors zone (anti-redirection)
-    harden-glue: yes
-    # Refuse les réponses dont la signature DNSSEC a été retirée
-    harden-dnssec-stripped: yes
-    # Vérifie la cohérence du chemin de délégation
-    harden-referral-path: yes
-    # Refuse les downgrades d'algorithme DNSSEC
-    harden-algo-downgrade: yes
-    # Applique le statut NXDOMAIN aux sous-domaines (RFC 8020)
-    harden-below-nxdomain: yes
-    # Randomise la casse des requêtes (0x20 encoding, anti-spoofing)
-    use-caps-for-id: yes
-
-    # ---- Vie privée ----
-    # Cache l'identité et la version du serveur aux requêtes CHAOS TXT
-    hide-identity: yes
-    hide-version: yes
-    # QNAME minimisation (RFC 7816) : n'envoie que le minimum nécessaire
-    # à chaque niveau de la hiérarchie DNS
-    #   racine → ne voit que ".fr"
-    #   TLD    → ne voit que "example.fr"
-    #   auth   → voit "www.example.fr"
-    qname-minimisation: yes
-    # N'inclut pas les sections additionnelles inutiles
-    minimal-responses: yes
-
-    # ---- Cache et performance ----
-    num-threads: 1
-    msg-cache-size: 64m
-    # Règle : rrset-cache = 2x msg-cache
-    rrset-cache-size: 128m
-    # TTL minimum 5 min (ignore les TTL très courts des CDN/pubs)
-    cache-min-ttl: 300
-    cache-max-ttl: 86400
-    # Renouvelle les entrées populaires avant expiration → 0ms pour les
-    # domaines fréquents
-    prefetch: yes
-    prefetch-key: yes
-    # Sert une réponse expirée pendant la re-résolution en arrière-plan
-    # → résilience si un serveur autoritaire est down
-    serve-expired: yes
-    serve-expired-ttl: 86400
-
-    # ---- Protection DNS rebinding ----
-    # Refuse les réponses pointant vers des IP privées pour un domaine public
-    private-address: 192.168.0.0/16
-    private-address: 172.16.0.0/12
-    private-address: 10.0.0.0/8
+```bash
+sudo cp ~/pidesk/unbound/pi-hole.conf /etc/unbound/unbound.conf.d/pi-hole.conf
 ```
 
 ### Démarrage
@@ -322,40 +243,13 @@ Serveur Bitwarden auto-hébergé, léger et compatible avec toutes les extension
 
 ### Installation
 
+Le fichier `docker-compose.yml` est dans le répertoire `vaultwarden/` du dépôt.
+
 ```bash
-mkdir -p ~/pidesk/vaultwarden && cd ~/pidesk/vaultwarden
+cd ~/pidesk/vaultwarden
 ```
 
-Créer `docker-compose.yml` :
-
-```yaml
-services:
-  vaultwarden:
-    container_name: vaultwarden
-    image: vaultwarden/server:latest
-    environment:
-      TZ: Europe/Paris
-      DOMAIN: https://<SUBDOMAIN>.<DOMAIN>
-      SIGNUPS_ALLOWED: "true"
-      INVITATIONS_ALLOWED: "false"
-      SHOW_PASSWORD_HINT: "false"
-      PASSWORD_HINTS_ALLOWED: "false"
-    volumes:
-      - ./data:/data
-    restart: unless-stopped
-
-  cloudflared:
-    container_name: cloudflared
-    image: cloudflare/cloudflared:latest
-    command: tunnel run
-    environment:
-      TUNNEL_TOKEN: "<TUNNEL_TOKEN>"
-    restart: unless-stopped
-    depends_on:
-      - vaultwarden
-```
-
-> Remplacer `<SUBDOMAIN>.<DOMAIN>` par le FQDN choisi (ex. `vault.example.fr`) et `<TUNNEL_TOKEN>` par le token du tunnel Cloudflare.
+> Remplacer `<SUBDOMAIN>.<DOMAIN>` par le FQDN choisi (ex. `vault.example.fr`) et `<TUNNEL_TOKEN>` par le token du tunnel Cloudflare dans `docker-compose.yml`.
 
 ```bash
 docker compose up -d
