@@ -5,8 +5,7 @@ services:
     ports:
       - "1883:1883"
     volumes:
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./passwd:/mosquitto/config/passwd:ro
+      - ./config:/mosquitto/config:ro
       - mosquitto-data:/mosquitto/data
       - mosquitto-log:/mosquitto/log
     environment:

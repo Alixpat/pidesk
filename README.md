@@ -483,24 +483,28 @@ Producteur → MQTT (port 1883) → Consommateur(s)
 
 ### Installation
 
+Les fichiers de configuration (`mosquitto.conf`, `docker-compose.yml`) sont dans le répertoire `mosquitto/` du dépôt.
+
 ```bash
-mkdir -p ~/pidesk/mosquitto && cd ~/pidesk/mosquitto
+cd ~/pidesk/mosquitto
 ```
 
 Créer le fichier de mots de passe et ajouter un utilisateur :
 
 ```bash
-docker run --rm -v $(pwd):/data eclipse-mosquitto:2 \
+docker run --rm -v $(pwd)/config:/data eclipse-mosquitto:2 \
   mosquitto_passwd -c -b /data/passwd <USER> <PASSWORD>
 ```
 
 > Remplacer `<USER>` et `<PASSWORD>` par les identifiants souhaités. Pour ajouter d'autres utilisateurs par la suite, retirer le flag `-c` (qui recrée le fichier) :
 > ```bash
-> docker run --rm -v $(pwd):/data eclipse-mosquitto:2 \
+> docker run --rm -v $(pwd)/config:/data eclipse-mosquitto:2 \
 >   mosquitto_passwd -b /data/passwd <USER2> <PASSWORD2>
 > ```
 
-Le fichier `mosquitto.conf` est fourni dans le dépôt. Démarrer le broker :
+> **Important** : le fichier `passwd` doit exister **avant** de lancer le conteneur, sinon Mosquitto refuse de démarrer.
+
+Démarrer le broker :
 
 ```bash
 docker compose up -d
