@@ -473,6 +473,93 @@ mkdir -p ~/pidesk/vaultwarden/backups
 
 ---
 
+## Mosquitto — broker MQTT
+
+Broker MQTT léger utilisé comme hub central d'événements. Les services publient et s'abonnent à des topics pour communiquer de manière découplée (domotique, capteurs, automatisations).
+
+```
+Producteur → MQTT (port 1883) → Consommateur(s)
+```
+
+### Installation
+
+Les fichiers de configuration (`mosquitto.conf`, `docker-compose.yml`) sont dans le répertoire `mosquitto/` du dépôt.
+
+```bash
+cd ~/pidesk/mosquitto
+```
+
+Créer le fichier de mots de passe et ajouter un utilisateur :
+
+```bash
+docker run --rm -v $(pwd)/config:/data eclipse-mosquitto:2 \
+  mosquitto_passwd -c -b /data/passwd <USER> <PASSWORD>
+```
+
+Fixer les permissions pour l'utilisateur `mosquitto` du conteneur (UID 1883) :
+
+```bash
+sudo chown 1883:1883 config/passwd
+chmod 600 config/passwd
+```
+
+> Remplacer `<USER>` et `<PASSWORD>` par les identifiants souhaités. Pour ajouter d'autres utilisateurs par la suite, retirer le flag `-c` (qui recrée le fichier) :
+> ```bash
+> docker run --rm -v $(pwd)/config:/data eclipse-mosquitto:2 \
+>   mosquitto_passwd -b /data/passwd <USER2> <PASSWORD2>
+> sudo chown 1883:1883 config/passwd
+> ```
+
+> **Important** : le fichier `passwd` doit exister **avant** de lancer le conteneur, sinon Mosquitto refuse de démarrer.
+
+Démarrer le broker :
+
+```bash
+docker compose up -d
+```
+
+### Vérification
+
+```bash
+# Vérifier que le conteneur tourne
+docker ps | grep mosquitto
+
+# Logs du broker
+docker logs -f mosquitto
+```
+
+### Test pub/sub
+
+Installer le client MQTT sur le Pi (ou une autre machine) :
+
+```bash
+sudo apt install -y mosquitto-clients
+```
+
+Dans un premier terminal, s'abonner à un topic :
+
+```bash
+mosquitto_sub -h localhost -p 1883 -u <USER> -P <PASSWORD> -t "test/hello"
+```
+
+Dans un second terminal, publier un message :
+
+```bash
+mosquitto_pub -h localhost -p 1883 -u <USER> -P <PASSWORD> -t "test/hello" -m "Bonjour MQTT"
+```
+
+Le message `Bonjour MQTT` doit apparaître dans le premier terminal.
+
+### Commandes utiles
+
+```bash
+docker logs -f mosquitto                        # Logs
+docker compose pull && docker compose up -d     # Mise à jour
+docker compose restart                          # Redémarrer
+```
+
+---
+
 ## Prochaines étapes
 
 - [ ] Installation de deCONZ (Phoscon / RasPBee 2)
