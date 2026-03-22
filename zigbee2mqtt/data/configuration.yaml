@@ -1,0 +1,23 @@
+homeassistant: false
+
+permit_join: false
+
+mqtt:
+  base_topic: zigbee2mqtt
+  server: mqtt://localhost:1883
+  user: "<MQTT_USER>"
+  password: "<MQTT_PASSWORD>"
+
+serial:
+  port: /dev/ttyAMA0
+  adapter: deconz
+
+frontend:
+  enabled: false
+
+advanced:
+  log_level: info
+  log_output:
+    - console
+  channel: 11
+  network_key: GENERATE

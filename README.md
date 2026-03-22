@@ -454,6 +454,187 @@ docker compose restart                          # Redémarrer
 
 ---
 
+## Zigbee2MQTT — passerelle Zigbee via MQTT
+
+Zigbee2MQTT permet de piloter les appareils Zigbee (ampoules, capteurs, prises…) directement via MQTT, sans interface graphique obligatoire. Plus léger que deCONZ, il s'intègre nativement avec Mosquitto.
+
+```
+Appareil Zigbee → RasPBee 2 (GPIO) → Zigbee2MQTT → Mosquitto (port 1883) → Consommateur(s)
+```
+
+### Prérequis : configurer le port série (UART)
+
+Le RasPBee 2 utilise le port série matériel `/dev/ttyAMA0`. Sur le Pi 3B, ce port est occupé par le Bluetooth par défaut. Il faut le libérer.
+
+#### 1. Désactiver le Bluetooth
+
+Ajouter dans `/boot/firmware/config.txt` (section `[all]`) :
+
+```
+dtoverlay=disable-bt
+```
+
+Désactiver le service Bluetooth associé :
+
+```bash
+sudo systemctl disable hciuart
+```
+
+#### 2. Désactiver la console série
+
+Vérifier si la console série est active :
+
+```bash
+cat /boot/firmware/cmdline.txt
+```
+
+Si `console=serial0,115200` est présent, le retirer :
+
+```bash
+sudo sed -i 's/console=serial0,115200 //g' /boot/firmware/cmdline.txt
+```
+
+#### 3. Activer le port série matériel
+
+Ajouter dans `/boot/firmware/config.txt` (même section `[all]`) :
+
+```
+enable_uart=1
+```
+
+#### 4. Redémarrer
+
+```bash
+sudo reboot
+```
+
+#### 5. Vérifier
+
+Après redémarrage, `/dev/ttyAMA0` doit exister :
+
+```bash
+ls -l /dev/ttyAMA0
+```
+
+### Installation
+
+Les fichiers de configuration sont dans le répertoire `zigbee2mqtt/` du dépôt.
+
+```bash
+cd ~/pidesk/zigbee2mqtt
+```
+
+> Remplacer `<MQTT_USER>` et `<MQTT_PASSWORD>` dans `data/configuration.yaml` par les identifiants Mosquitto créés précédemment.
+
+```bash
+docker compose up -d
+```
+
+> Au premier démarrage, Zigbee2MQTT génère automatiquement une clé réseau unique (`network_key: GENERATE` est remplacé par la clé générée dans le fichier de configuration).
+
+### Vérification
+
+```bash
+# Vérifier que le conteneur tourne
+docker ps | grep zigbee2mqtt
+
+# Logs (chercher "Zigbee2MQTT started" et "Connected to MQTT server")
+docker logs -f zigbee2mqtt
+```
+
+### Appairage d'un appareil
+
+L'appairage se fait entièrement via MQTT, sans interface web :
+
+```bash
+# Ouvrir l'appairage pendant 120 secondes
+mosquitto_pub -h localhost -p 1883 -u <USER> -P <PASSWORD> \
+  -t 'zigbee2mqtt/bridge/request/permit_join' -m '{"value": true, "time": 120}'
+
+# Mettre l'appareil Zigbee en mode appairage (selon le fabricant)
+# Surveiller les nouveaux appareils détectés
+mosquitto_sub -h localhost -p 1883 -u <USER> -P <PASSWORD> \
+  -t 'zigbee2mqtt/bridge/event' | grep device_joined
+
+# Fermer l'appairage (se ferme aussi automatiquement après le délai)
+mosquitto_pub -h localhost -p 1883 -u <USER> -P <PASSWORD> \
+  -t 'zigbee2mqtt/bridge/request/permit_join' -m '{"value": false}'
+```
+
+### Lister les appareils connectés
+
+```bash
+mosquitto_sub -h localhost -p 1883 -u <USER> -P <PASSWORD> \
+  -t 'zigbee2mqtt/bridge/devices' -C 1 | python3 -m json.tool
+```
+
+### Renommer un appareil
+
+```bash
+mosquitto_pub -h localhost -p 1883 -u <USER> -P <PASSWORD> \
+  -t 'zigbee2mqtt/bridge/request/device/rename' \
+  -m '{"from": "0x00158d0001234567", "to": "lampe_salon"}'
+```
+
+### Piloter un appareil
+
+```bash
+# Allumer une lampe
+mosquitto_pub -h localhost -p 1883 -u <USER> -P <PASSWORD> \
+  -t 'zigbee2mqtt/lampe_salon/set' -m '{"state": "ON"}'
+
+# Éteindre
+mosquitto_pub -h localhost -p 1883 -u <USER> -P <PASSWORD> \
+  -t 'zigbee2mqtt/lampe_salon/set' -m '{"state": "OFF"}'
+
+# Régler la luminosité (0-254)
+mosquitto_pub -h localhost -p 1883 -u <USER> -P <PASSWORD> \
+  -t 'zigbee2mqtt/lampe_salon/set' -m '{"brightness": 128}'
+```
+
+### Écouter les événements d'un capteur
+
+```bash
+mosquitto_sub -h localhost -p 1883 -u <USER> -P <PASSWORD> \
+  -t 'zigbee2mqtt/capteur_temperature/#'
+```
+
+### Commandes utiles
+
+```bash
+docker logs -f zigbee2mqtt                        # Logs
+docker compose pull && docker compose up -d       # Mise à jour
+docker compose restart                            # Redémarrer
+```
+
+### Dépannage
+
+**`/dev/ttyAMA0` n'existe pas après reboot :**
+
+Vérifier que la config est bien dans `/boot/firmware/config.txt` (et non `/boot/config.txt` — Bookworm utilise le chemin avec `firmware/`).
+
+```bash
+grep -E "disable-bt|enable_uart" /boot/firmware/config.txt
+```
+
+**Zigbee2MQTT ne démarre pas — erreur "port busy" :**
+
+Un autre processus utilise le port série :
+
+```bash
+sudo fuser /dev/ttyAMA0
+```
+
+**Zigbee2MQTT ne se connecte pas à Mosquitto :**
+
+Vérifier les identifiants dans `data/configuration.yaml` et que Mosquitto tourne :
+
+```bash
+docker ps | grep mosquitto
+```
+
+---
+
 ## Prochaines étapes
 
-- [ ] Installation de deCONZ (Phoscon / RasPBee 2)
+- [ ] Automatisation domotique (scripts, règles MQTT)
