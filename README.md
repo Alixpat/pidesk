@@ -480,41 +480,32 @@ Désactiver le service Bluetooth associé :
 sudo systemctl disable hciuart
 ```
 
-#### 2. Désactiver la console série
+#### 2. Configurer le port série avec raspi-config
 
-Vérifier si la console série est active :
-
-```bash
-cat /boot/firmware/cmdline.txt
-```
-
-Si `console=serial0,115200` est présent, le retirer :
+Utiliser `raspi-config` pour désactiver la console série et activer le port matériel :
 
 ```bash
-sudo sed -i 's/console=serial0,115200 //g' /boot/firmware/cmdline.txt
+sudo raspi-config
 ```
 
-#### 3. Activer le port série matériel
+1. **Interface Options**
+2. **Serial Port**
+3. Login shell accessible via serial ? → **Non**
+4. Hardware serial port activé ? → **Oui**
+5. **Finish** → **Reboot**
 
-Ajouter dans `/boot/firmware/config.txt` (même section `[all]`) :
+Cela retire automatiquement `console=serial0,115200` de `cmdline.txt` et ajoute `enable_uart=1` dans `config.txt`.
 
-```
-enable_uart=1
-```
+#### 3. Vérifier
 
-#### 4. Redémarrer
-
-```bash
-sudo reboot
-```
-
-#### 5. Vérifier
-
-Après redémarrage, `/dev/ttyAMA0` doit exister :
+Après redémarrage, `/dev/ttyAMA0` doit exister et la console ne doit plus l'utiliser :
 
 ```bash
 ls -l /dev/ttyAMA0
+dmesg | grep ttyAMA0
 ```
+
+La sortie de `dmesg` ne doit **pas** contenir `console [ttyAMA0]`.
 
 ### Installation
 
