@@ -2,9 +2,11 @@ services:
   vaultwarden:
     container_name: vaultwarden
     image: vaultwarden/server:latest
+    ports:
+      - "8222:80"
     environment:
       TZ: Europe/Paris
-      DOMAIN: https://<SUBDOMAIN>.<DOMAIN>
+      DOMAIN: https://<TAILSCALE_FQDN>
       SIGNUPS_ALLOWED: "true"
       INVITATIONS_ALLOWED: "false"
       SHOW_PASSWORD_HINT: "false"
@@ -12,13 +14,3 @@ services:
     volumes:
       - ./data:/data
     restart: unless-stopped
-
-  cloudflared:
-    container_name: cloudflared
-    image: cloudflare/cloudflared:latest
-    command: tunnel run
-    environment:
-      TUNNEL_TOKEN: "<TUNNEL_TOKEN>"
-    restart: unless-stopped
-    depends_on:
-      - vaultwarden
