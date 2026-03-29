@@ -1,0 +1,12 @@
+services:
+  zigbee2mqtt:
+    container_name: zigbee2mqtt
+    image: koenkk/zigbee2mqtt:latest
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Paris
+    volumes:
+      - ./data:/app/data
+    devices:
+      - /dev/ttyAMA0:/dev/ttyAMA0
+    network_mode: host

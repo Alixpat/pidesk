@@ -49,7 +49,25 @@ sudo usermod -aG docker $USER
 
 Se déconnecter/reconnecter pour appliquer le groupe `docker`.
 
-### 4. IP statique
+### 4. Tailscale
+
+Tailscale crée un VPN mesh (WireGuard) entre les appareils. Il permet l'accès distant aux services du Pi sans exposer de port sur Internet.
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+
+Suivre le lien affiché pour authentifier l'appareil. Vérifier :
+
+```bash
+tailscale status   # liste des appareils du tailnet
+tailscale ip       # IP Tailscale du Pi (100.x.x.x)
+```
+
+Le FQDN Tailscale du Pi (ex. `pidesk.tailXXXXX.ts.net`) est utilisé par les services qui nécessitent un accès HTTPS distant (voir Vaultwarden).
+
+### 5. IP statique
 
 Vérifier le nom de la connexion :
 
@@ -239,7 +257,15 @@ sudo unbound-control flush_zone example.com
 
 ## Vaultwarden — gestionnaire de mots de passe
 
-Serveur Bitwarden auto-hébergé, léger et compatible avec toutes les extensions navigateur et apps mobiles Bitwarden. L'accès distant est assuré par un tunnel Cloudflare (voir section suivante).
+Serveur Bitwarden auto-hébergé, léger et compatible avec toutes les extensions navigateur et apps mobiles Bitwarden. L'accès distant est assuré par Tailscale (VPN mesh WireGuard) — seuls les appareils du tailnet peuvent atteindre le service.
+
+### Prérequis
+
+Tailscale installé et actif sur le Pi :
+
+```bash
+tailscale status   # doit afficher le hostname et l'IP Tailscale (100.x.x.x)
+```
 
 ### Installation
 
@@ -249,36 +275,48 @@ Le fichier `docker-compose.yml` est dans le répertoire `vaultwarden/` du dépô
 cd ~/pidesk/vaultwarden
 ```
 
-> Remplacer `<SUBDOMAIN>.<DOMAIN>` par le FQDN choisi (ex. `vault.example.fr`) et `<TUNNEL_TOKEN>` par le token du tunnel Cloudflare dans `docker-compose.yml`.
+> Remplacer `<TAILSCALE_FQDN>` par le FQDN Tailscale du Pi (ex. `pidesk.tailXXXXX.ts.net`) dans `docker-compose.yml`.
 
 ```bash
 docker compose up -d
 ```
 
-### Configuration du tunnel Cloudflare
+### HTTPS via Tailscale Serve
 
-1. Se connecter au [dashboard Cloudflare Zero Trust](https://one.dash.cloudflare.com/)
-2. **Networks → Tunnels → Create a tunnel**
-3. Choisir **Cloudflared** comme type de connecteur
-4. Nommer le tunnel (ex. `pidesk-vaultwarden`)
-5. Copier le token affiché → le reporter dans `<TUNNEL_TOKEN>` du compose
-6. Ajouter un **Public Hostname** :
-   - **Subdomain** : `vault` (ou autre)
-   - **Domain** : sélectionner le domaine géré dans Cloudflare
-   - **Service** : `HTTP` — `vaultwarden:80`
+Tailscale Serve agit comme reverse proxy avec un certificat Let's Encrypt valide pour le domaine `*.ts.net`. Il termine le TLS et transfère en HTTP vers Vaultwarden sur le port 8222.
 
-> Pas besoin de certificat auto-signé ni de TLS côté Vaultwarden : Cloudflare termine le TLS avec un certificat Let's Encrypt valide sur le domaine. Le trafic entre `cloudflared` et `vaultwarden` reste en HTTP sur le réseau Docker interne.
+```bash
+sudo tailscale serve --bg 8222
+```
+
+> Pour ne pas avoir besoin de `sudo` à chaque fois :
+> ```bash
+> sudo tailscale set --operator=$USER
+> ```
+
+Vérifier la configuration :
+
+```bash
+tailscale serve status
+```
+
+Pour désactiver :
+
+```bash
+tailscale serve --https=443 off
+```
 
 ### Premier accès
 
-Aller sur `https://<SUBDOMAIN>.<DOMAIN>` et créer son compte.
+Depuis un appareil connecté au même tailnet :
 
-### Sécurisation post-installation
+```
+https://<TAILSCALE_FQDN>
+```
 
-Une fois le compte créé, désactiver les inscriptions :
+Créer son compte, puis désactiver les inscriptions :
 
 ```bash
-cd ~/pidesk/vaultwarden
 vi docker-compose.yml
 # Changer SIGNUPS_ALLOWED: "true" → "false"
 docker compose up -d
@@ -286,84 +324,44 @@ docker compose up -d
 
 > Les données sont persistées dans `./data`, elles survivent à la recréation du conteneur.
 
-### Accès LAN direct (optionnel)
+### Extension navigateur / app mobile
 
-Pour accéder à Vaultwarden sans passer par le tunnel (ex. en cas de coupure Internet) :
+Dans l'extension Bitwarden : paramètres → **Auto-hébergé** → URL du serveur : `https://<TAILSCALE_FQDN>`.
 
-```yaml
-services:
-  vaultwarden:
-    # ... (config existante)
-    ports:
-      - "8222:80"
-```
+> L'appareil doit être connecté au tailnet pour accéder au coffre.
 
-Accès local : `http://<IP>:8222` (HTTP simple, pas de TLS nécessaire en LAN).
+### Sécurité
 
-### Extension navigateur
-
-Dans l'extension Bitwarden : paramètres → **Auto-hébergé** → URL du serveur : `https://<SUBDOMAIN>.<DOMAIN>`.
-
-### Gestion du tunnel
-
-```bash
-# Logs du tunnel
-docker logs -f cloudflared
-
-# Vérifier l'état du tunnel dans le dashboard Cloudflare Zero Trust
-# Networks → Tunnels → le tunnel doit être "Healthy"
-
-# Redémarrer le tunnel
-docker compose restart cloudflared
-```
-
-### Sécurisation Cloudflare
-
-Le tunnel Cloudflare protège déjà contre l'exposition directe (aucun port ouvert sur la box, pas d'IP publique). Les données du coffre sont chiffrées côté client (AES-256) — même en cas de compromission du serveur, les mots de passe restent illisibles sans le master password.
-
-Les règles suivantes ajoutent une protection supplémentaire au niveau de l'edge Cloudflare, avant que le trafic n'atteigne le Pi.
-
-#### Security rules
-
-Dans le dashboard Cloudflare du domaine : **Security → Security rules → Create rule**.
-
-**Règle : `Block Non-FR`** — bloque tout le trafic provenant de l'extérieur de la France :
-
-```
-(http.host eq "<SUBDOMAIN>.<DOMAIN>") and (ip.geoip.country ne "FR")
-```
-
-Action : **Block**
-
-> Si besoin d'accéder depuis l'étranger (voyage), désactiver temporairement cette règle dans le dashboard.
-
-#### Rate limiting rules
-
-Dans le dashboard Cloudflare du domaine : **Security → Security rules → Create rule** (onglet rate limiting).
-
-**Règle : `Rate Limit Login`** — limite les tentatives de connexion (anti brute-force) sur l'endpoint d'authentification :
-
-```
-(http.host eq "<SUBDOMAIN>.<DOMAIN>") and (http.request.uri.path contains "/identity/connect/token")
-```
-
-Action : **Block**
-
-> Le plan gratuit Cloudflare offre 1 rate limiting rule. L'endpoint `/identity/connect/token` est l'endpoint OAuth2 utilisé par tous les clients Bitwarden (extension, app mobile, web vault) pour l'authentification.
+- **Réseau** : Vaultwarden n'est accessible que via Tailscale — aucun port exposé sur Internet, pas de DNS public. Tailscale chiffre tout le trafic de bout en bout (WireGuard).
+- **Chiffrement des données** : les données du coffre sont chiffrées côté client (AES-256) — même en cas de compromission du serveur, les mots de passe restent illisibles sans le master password.
+- **Contrôle d'accès** : seuls les appareils autorisés dans le tailnet peuvent joindre le service. Gérer les appareils depuis la [console d'admin Tailscale](https://login.tailscale.com/admin/machines).
 
 ### Sauvegarde
 
-La base SQLite `./data/db.sqlite3` contient tous les comptes et coffres chiffrés. Mettre en place une sauvegarde régulière :
+La base SQLite `./data/db.sqlite3` contient tous les comptes et coffres chiffrés. Le script `backup.sh` effectue un backup safe (`sqlite3 .backup`) et l'envoie vers une machine distante via rsync.
 
 ```bash
-# Créer le répertoire de backups
-mkdir -p ~/pidesk/vaultwarden/backups
+# Adapter REMOTE_HOST et REMOTE_DIR dans backup.sh si nécessaire
 
-# Ajouter dans crontab -e
-0 3 * * * cp ~/pidesk/vaultwarden/data/db.sqlite3 ~/pidesk/vaultwarden/backups/db-$(date +\%F).sqlite3
+# Test manuel
+./backup.sh
+
+# Cron (tous les jours à 3h)
+crontab -e
+0 3 * * * /home/alex/pidesk/vaultwarden/backup.sh
 ```
 
-> Idéalement, synchroniser les backups vers une autre machine via rsync.
+Le script conserve les 7 derniers backups sur la machine distante.
+
+Le script logge dans syslog (tag `backup-vaultwarden`). Si `capteur-backup` (voir [vigie-capteurs](https://github.com/Alixpat/vigie-capteurs)) est installé sur le Pi, il détecte les succès/échecs et publie sur MQTT `vigie/backup/vaultwarden` → notification dans l'app Vigie.
+
+### Commandes utiles
+
+```bash
+docker logs -f vaultwarden                        # Logs
+docker compose pull && docker compose up -d       # Mise à jour
+docker compose restart                            # Redémarrer
+```
 
 ---
 
@@ -454,6 +452,79 @@ docker compose restart                          # Redémarrer
 
 ---
 
+## Zigbee2MQTT — passerelle Zigbee↔MQTT
+
+Zigbee2MQTT utilise la clé RasPBee 2 pour piloter les appareils Zigbee via MQTT, sans dépendre du cloud. Les appareils publient leur état sur des topics MQTT consommés par d'autres services (automatisations, dashboards, etc.).
+
+```
+Appareil Zigbee → RasPBee 2 → Zigbee2MQTT → MQTT (Mosquitto) → Consommateur(s)
+```
+
+### Prérequis
+
+- Mosquitto opérationnel (voir section précédente)
+- RasPBee 2 connecté et accessible sur `/dev/ttyAMA0`
+- Désactiver le Bluetooth intégré pour libérer le port série :
+
+```bash
+echo "dtoverlay=disable-bt" | sudo tee -a /boot/firmware/config.txt
+sudo systemctl disable hciuart
+sudo reboot
+```
+
+### Installation
+
+Le fichier `docker-compose.yml` est dans le répertoire `zigbee2mqtt/` du dépôt.
+
+```bash
+cd ~/pidesk/zigbee2mqtt
+```
+
+Copier le fichier de configuration template et l'adapter :
+
+```bash
+cp configuration.yaml data/configuration.yaml
+vi data/configuration.yaml
+```
+
+> Remplacer `<PI_IP>`, `<MQTT_USER>` et `<MQTT_PASSWORD>` par les valeurs réelles. La `network_key` sera générée automatiquement au premier démarrage si laissée à `GENERATE`.
+
+```bash
+docker compose up -d
+```
+
+### Vérification
+
+```bash
+# Vérifier que le conteneur tourne
+docker ps | grep zigbee2mqtt
+
+# Logs (doit afficher "Zigbee2MQTT started!")
+docker logs -f zigbee2mqtt
+```
+
+### Appairer un appareil
+
+Activer temporairement le mode appairage :
+
+```bash
+mosquitto_pub -h localhost -p 1883 -u <USER> -P <PASSWORD> \
+  -t "zigbee2mqtt/bridge/request/permit_join" -m '{"value": true, "time": 120}'
+```
+
+Mettre l'appareil Zigbee en mode appairage (selon la doc du fabricant). Zigbee2MQTT publiera un message sur `zigbee2mqtt/bridge/event` quand l'appareil sera détecté.
+
+### Commandes utiles
+
+```bash
+docker logs -f zigbee2mqtt                        # Logs
+docker compose pull && docker compose up -d       # Mise à jour
+docker compose restart                            # Redémarrer
+```
+
+---
+
 ## Prochaines étapes
 
-- [ ] Installation de deCONZ (Phoscon / RasPBee 2)
+- [ ] Restreindre Mosquitto sur localhost (`127.0.0.1:1883`)
+- [ ] Renforcer le mot de passe MQTT
