@@ -2,6 +2,17 @@
 
 Raspberry Pi 3B de bureau — plateforme de services domestiques.
 
+## Sommaire
+
+- [Matériel](#matériel)
+- [Installation de base](#installation-de-base)
+- [Pi-hole](#pi-hole)
+- [Unbound — résolveur DNS récursif local](#unbound--résolveur-dns-récursif-local)
+- [Vaultwarden — gestionnaire de mots de passe](#vaultwarden--gestionnaire-de-mots-de-passe)
+- [Mosquitto — broker MQTT](#mosquitto--broker-mqtt)
+- [Zigbee2MQTT — passerelle Zigbee↔MQTT](#zigbee2mqtt--passerelle-zigbeemqtt)
+- [Prochaines étapes](#prochaines-étapes)
+
 ## Matériel
 
 | Composant | Détail |
