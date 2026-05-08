@@ -461,6 +461,48 @@ docker compose pull && docker compose up -d     # Mise à jour
 docker compose restart                          # Redémarrer
 ```
 
+### Bridge vers The Things Network (LoRaWAN)
+
+Le broker peut être ponté vers The Things Stack Community (cluster
+`eu1`) pour exposer les uplinks LoRaWAN sur le LAN et envoyer des
+downlinks. Voir
+[`mosquitto/config/conf.d/ttn-bridge.conf.example`](mosquitto/config/conf.d/ttn-bridge.conf.example).
+
+Topics côté local après mise en place du bridge :
+
+| Sens | Topic local | Topic TTN distant |
+|---|---|---|
+| TTN → local | `ttn/devices/<dev>/up` | `v3/<app>@<tenant>/devices/<dev>/up` |
+| TTN → local | `ttn/devices/<dev>/down/{queued,sent,ack,nack,failed}` | idem |
+| local → TTN | `ttn/devices/<dev>/down/push` | idem |
+
+Procédure :
+
+1. Console TTN → application → *Integrations → MQTT → Generate new
+   API key*. Copier la clé (`NNSXS.…`).
+2. Sur le Pi :
+   ```bash
+   cd ~/pidesk/mosquitto/config/conf.d
+   cp ttn-bridge.conf.example ttn-bridge.conf
+   # remplacer <TTN_APP_ID>, <TTN_TENANT>, <TTN_API_KEY>
+   docker compose -f ~/pidesk/mosquitto/docker-compose.yml restart mosquitto
+   ```
+3. Vérifier qu'un uplink arrive (déclencher le device, ou attendre) :
+   ```bash
+   mosquitto_sub -h localhost -u <USER> -P <PASS> -t 'ttn/#' -v
+   ```
+4. Tester un downlink :
+   ```bash
+   mosquitto_pub -h localhost -u <USER> -P <PASS> \
+     -t 'ttn/devices/<dev>/down/push' \
+     -m '{"downlinks":[{"f_port":10,"frm_payload":"aGVsbG8=","priority":"NORMAL"}]}'
+   ```
+   L'event `ttn/devices/<dev>/down/sent` doit être reçu côté TTN
+   quand le device a reçu la trame en RX1/RX2.
+
+> Le fichier `ttn-bridge.conf` (avec la clé) est gitignoré ;
+> seul le `.example` est versionné.
+
 ---
 
 ## Zigbee2MQTT — passerelle Zigbee↔MQTT

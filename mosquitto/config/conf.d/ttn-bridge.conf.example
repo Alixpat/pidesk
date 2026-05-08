@@ -1,0 +1,42 @@
+# Bridge Mosquitto -> The Things Stack Community (TTN, eu1)
+#
+# Pour activer ce bridge :
+#   1. Console TTN -> ton application -> "Integrations" -> "MQTT" -> "Generate
+#      new API key" (ou onglet API keys + Add API key avec scopes
+#      "Read application traffic" + "Write downlink application traffic").
+#   2. Sur pidesk, copier ce fichier en `ttn-bridge.conf` (sans ".example")
+#      et remplacer les placeholders <TTN_APP_ID>, <TTN_TENANT>, <TTN_API_KEY>.
+#      Le fichier `ttn-bridge.conf` est gitignoré.
+#   3. `docker compose -f mosquitto/docker-compose.yml restart mosquitto`
+#
+# Mapping de topics :
+#   - Uplinks   TTN -> local : `ttn/devices/<dev>/up`
+#                              (resp. join, down/queued, sent, ack, nack, failed)
+#   - Downlinks local -> TTN : publier sur `ttn/devices/<dev>/down/push`
+#                              (ou `.../down/replace` pour remplacer la queue).
+
+connection ttn-eu1
+address eu1.cloud.thethings.network:8883
+bridge_cafile /etc/ssl/certs/ca-certificates.crt
+
+remote_username <TTN_APP_ID>@<TTN_TENANT>
+remote_password <TTN_API_KEY>
+
+cleansession true
+notifications false
+bridge_protocol_version mqttv311
+keepalive_interval 60
+restart_timeout 30
+
+# Uplinks et événements TTN -> local
+topic devices/+/up           in 0 ttn/ v3/<TTN_APP_ID>@<TTN_TENANT>/
+topic devices/+/join         in 0 ttn/ v3/<TTN_APP_ID>@<TTN_TENANT>/
+topic devices/+/down/queued  in 0 ttn/ v3/<TTN_APP_ID>@<TTN_TENANT>/
+topic devices/+/down/sent    in 0 ttn/ v3/<TTN_APP_ID>@<TTN_TENANT>/
+topic devices/+/down/ack     in 0 ttn/ v3/<TTN_APP_ID>@<TTN_TENANT>/
+topic devices/+/down/nack    in 0 ttn/ v3/<TTN_APP_ID>@<TTN_TENANT>/
+topic devices/+/down/failed  in 0 ttn/ v3/<TTN_APP_ID>@<TTN_TENANT>/
+
+# Downlinks local -> TTN
+topic devices/+/down/push     out 0 ttn/ v3/<TTN_APP_ID>@<TTN_TENANT>/
+topic devices/+/down/replace  out 0 ttn/ v3/<TTN_APP_ID>@<TTN_TENANT>/

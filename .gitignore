@@ -1,0 +1,11 @@
+# Données runtime des conteneurs (cf. CLAUDE.md)
+vaultwarden/data/
+pihole/etc-pihole/
+pihole/etc-dnsmasq.d/
+zigbee2mqtt/data/
+
+# Fichier `passwd` Mosquitto (hashes locaux)
+mosquitto/config/passwd
+
+# Confs bridge avec secrets, seul .example est versionné
+mosquitto/config/conf.d/*.conf
