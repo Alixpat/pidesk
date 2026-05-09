@@ -1,0 +1,14 @@
+[Unit]
+Description=TTN Bridge - relais MQTT TTN ⇄ Mosquitto local
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__WORKING_DIR__
+ExecStart=__WORKING_DIR__/venv/bin/python3 ttn_bridge.py /etc/ttn-bridge/config.json
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

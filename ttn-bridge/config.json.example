@@ -1,0 +1,31 @@
+{
+  "ttn": {
+    "broker": "eu1.cloud.thethings.network",
+    "port": 8883,
+    "username": "<TTN_APPLICATION_ID>@ttn",
+    "password": "NNSXS.<API_KEY>",
+    "client_id": "ttn-bridge-pidesk",
+    "topic_prefix": "v3/<TTN_APPLICATION_ID>@ttn/",
+    "subscribe_topics": [
+      "devices/+/up",
+      "devices/+/join",
+      "devices/+/down/queued",
+      "devices/+/down/sent",
+      "devices/+/down/ack",
+      "devices/+/down/nack",
+      "devices/+/down/failed"
+    ]
+  },
+  "local": {
+    "broker": "127.0.0.1",
+    "port": 1883,
+    "username": "<MQTT_USER>",
+    "password": "<MQTT_PASSWORD>",
+    "client_id": "ttn-bridge-pidesk-local",
+    "ttn_prefix": "ttn/",
+    "subscribe_topics": [
+      "devices/+/down/push",
+      "devices/+/down/replace"
+    ]
+  }
+}

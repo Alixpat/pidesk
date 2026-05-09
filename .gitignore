@@ -9,3 +9,8 @@ mosquitto/config/passwd
 
 # Confs bridge avec secrets, seul .example est versionné
 mosquitto/config/conf.d/*.conf
+
+# Conf ttn-bridge (Python) avec secrets, seul .example est versionné
+ttn-bridge/config.json
+ttn-bridge/venv/
+ttn-bridge/__pycache__/
