@@ -10,6 +10,7 @@ Raspberry Pi 3B de bureau — plateforme de services domestiques.
 - [Unbound — résolveur DNS récursif local](#unbound--résolveur-dns-récursif-local)
 - [Vaultwarden — gestionnaire de mots de passe](#vaultwarden--gestionnaire-de-mots-de-passe)
 - [Mosquitto — broker MQTT](#mosquitto--broker-mqtt)
+- [TTN Bridge — relais LoRaWAN](#ttn-bridge--relais-lorawan)
 - [Zigbee2MQTT — passerelle Zigbee↔MQTT](#zigbee2mqtt--passerelle-zigbeemqtt)
 - [Prochaines étapes](#prochaines-étapes)
 
@@ -461,47 +462,63 @@ docker compose pull && docker compose up -d     # Mise à jour
 docker compose restart                          # Redémarrer
 ```
 
-### Bridge vers The Things Network (LoRaWAN)
+---
 
-Le broker peut être ponté vers The Things Stack Community (cluster
-`eu1`) pour exposer les uplinks LoRaWAN sur le LAN et envoyer des
-downlinks. Voir
-[`mosquitto/config/conf.d/ttn-bridge.conf.example`](mosquitto/config/conf.d/ttn-bridge.conf.example).
+## TTN Bridge — relais LoRaWAN
 
-Topics côté local après mise en place du bridge :
+Service Python (paho-mqtt + systemd) qui relaye The Things Stack Community
+(cluster `eu1`) ⇄ Mosquitto local : uplinks LoRaWAN exposés sur le LAN,
+downlinks publiables depuis le LAN. Le code est dans le répertoire
+[`ttn-bridge/`](ttn-bridge/) du dépôt.
+
+> Pourquoi un service Python plutôt que la directive `connection ttn-eu1`
+> du bridge mosquitto natif ? Le bridge mosquitto a été rejeté par TTN à
+> partir du 2026-05-09 avec « unacceptable protocol version » (mqttv311) ou
+> disconnect silencieux (mqttv50), sur les versions 2.0.22 ET 2.1.2, alors
+> que `mosquitto_pub`/`_sub` du même conteneur passent avec les mêmes
+> credentials. Le fichier `mosquitto/config/conf.d/ttn-bridge.conf` est
+> renommé en `.disabled` sur le Pi (gitignored).
+
+Topics après installation :
 
 | Sens | Topic local | Topic TTN distant |
 |---|---|---|
 | TTN → local | `ttn/devices/<dev>/up` | `v3/<app>@<tenant>/devices/<dev>/up` |
-| TTN → local | `ttn/devices/<dev>/down/{queued,sent,ack,nack,failed}` | idem |
-| local → TTN | `ttn/devices/<dev>/down/push` | idem |
+| TTN → local | `ttn/devices/<dev>/{join,down/queued,sent,ack,nack,failed}` | idem |
+| local → TTN | `ttn/devices/<dev>/down/{push,replace}` | idem |
 
-Procédure :
+### Installation
 
-1. Console TTN → application → *Integrations → MQTT → Generate new
-   API key*. Copier la clé (`NNSXS.…`).
+1. Console TTN → application → *Integrations → MQTT → Generate new API key*.
+   Copier la clé (`NNSXS.…`) et le username (`<app>@<tenant>`).
 2. Sur le Pi :
    ```bash
-   cd ~/pidesk/mosquitto/config/conf.d
-   cp ttn-bridge.conf.example ttn-bridge.conf
-   # remplacer <TTN_APP_ID>, <TTN_TENANT>, <TTN_API_KEY>
-   docker compose -f ~/pidesk/mosquitto/docker-compose.yml restart mosquitto
+   cd ~/pidesk/ttn-bridge
+   cp config.json.example config.json
+   # éditer config.json : remplacer <TTN_APPLICATION_ID>, <API_KEY>,
+   # <MQTT_USER>, <MQTT_PASSWORD>
+   sudo bash install.sh
    ```
-3. Vérifier qu'un uplink arrive (déclencher le device, ou attendre) :
-   ```bash
-   mosquitto_sub -h localhost -u <USER> -P <PASS> -t 'ttn/#' -v
-   ```
-4. Tester un downlink :
-   ```bash
-   mosquitto_pub -h localhost -u <USER> -P <PASS> \
-     -t 'ttn/devices/<dev>/down/push' \
-     -m '{"downlinks":[{"f_port":10,"frm_payload":"aGVsbG8=","priority":"NORMAL"}]}'
-   ```
-   L'event `ttn/devices/<dev>/down/sent` doit être reçu côté TTN
-   quand le device a reçu la trame en RX1/RX2.
+   `install.sh` crée le venv, installe `paho-mqtt`, copie `config.json` vers
+   `/etc/ttn-bridge/`, génère le service systemd et l'active.
 
-> Le fichier `ttn-bridge.conf` (avec la clé) est gitignoré ;
-> seul le `.example` est versionné.
+### Vérification
+
+```bash
+systemctl status ttn-bridge          # doit être active (running)
+journalctl -u ttn-bridge -f          # logs : doit montrer "TTN connecté" + 7 subscribes
+
+# Voir les uplinks arriver (déclencher le device, ou attendre) :
+mosquitto_sub -h localhost -u <USER> -P <PASS> -t 'ttn/#' -v
+
+# Tester un downlink :
+mosquitto_pub -h localhost -u <USER> -P <PASS> \
+  -t 'ttn/devices/<dev>/down/push' \
+  -m '{"downlinks":[{"f_port":10,"frm_payload":"aGVsbG8=","priority":"NORMAL"}]}'
+```
+
+> Le fichier `ttn-bridge/config.json` (avec la clé) est gitignoré ; seul
+> `config.json.example` est versionné.
 
 ---
 
