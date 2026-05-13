@@ -146,6 +146,35 @@ docker restart pihole
 
 Configurer le serveur DHCP du routeur pour distribuer l'IP du Pi comme seul serveur DNS (option DHCP 6). Ne pas ajouter de DNS secondaire, sinon les clients contournent Pi-hole aléatoirement.
 
+### Résolution des hostnames `.lan` locaux
+
+Pi-hole ne fait pas DHCP — c'est le routeur qui distribue les baux et connaît les hostnames clients. Sans config, Pi-hole renvoie `NXDOMAIN` pour tout `*.lan`. Pour déléguer la zone locale au routeur :
+
+```bash
+sudo cp ~/pidesk/pihole/dnsmasq.d/02-lan-forward.conf ~/pidesk/pihole/etc-dnsmasq.d/
+sudo sed -i 's|<ROUTER_IP>|192.168.2.1|; s|<LAN_CIDR>|192.168.2.0/24|' \
+  ~/pidesk/pihole/etc-dnsmasq.d/02-lan-forward.conf
+```
+
+Pi-hole v6 ignore `/etc/dnsmasq.d/` par défaut et se déclare autoritaire pour la zone `lan` (ce qui court-circuite le forward). Activer les deux toggles :
+
+```bash
+docker exec pihole pihole-FTL --config misc.etc_dnsmasq_d true
+docker exec pihole pihole-FTL --config dns.domain.local false
+docker restart pihole
+```
+
+> `misc.etc_dnsmasq_d=true` charge nos fichiers `02-*.conf`. `dns.domain.local=false` retire le `local=/lan/` implicite qui rendait Pi-hole autoritaire et bloquait le `server=/lan/...`.
+
+Vérification :
+
+```bash
+dig @127.0.0.1 +short pidrive.lan        # → 192.168.2.246
+dig @127.0.0.1 +short -x 192.168.2.246   # → pidrive.lan.
+```
+
+> **Côté Tailscale (accès tailnet)** : pour que `.lan` résolve aussi depuis les appareils du tailnet, ajouter un nameserver custom dans la [console Tailscale → DNS](https://login.tailscale.com/admin/dns) — *Add nameserver → Custom*, restreint au domaine `lan`, IP `192.168.2.10`.
+
 ### Commandes utiles
 
 ```bash
