@@ -1,7 +1,16 @@
 services:
   mosquitto:
     container_name: mosquitto
-    image: eclipse-mosquitto:2
+    # Pinné à 2.1.2 (version qui tournait avant cet ajout). Le `passwd`
+    # a été généré par mosquitto_passwd 2.1+ et utilise PBKDF2 ($7$...).
+    # Mosquitto 2.0.x ne sait pas lire ce format ("Unable to decode
+    # password salt") — un downgrade vers :2.0 casse l'auth de tous
+    # les clients (vigie-capteurs, app Android, ttn-bridge). Un upgrade
+    # vers 2.2+ pourrait aussi changer le format, donc on pin la
+    # version exacte. Eclipse ne publie pas de tag :2.1.2 non-alpine,
+    # mais le tag :2 floating est déjà bâti sur alpine 3.23 → pas de
+    # différence en pratique.
+    image: eclipse-mosquitto:2.1.2-alpine
     ports:
       - "1883:1883"
     volumes:
