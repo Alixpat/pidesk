@@ -18,9 +18,9 @@ Compact guidance for OpenCode (and similar) working in this repo. Derived from C
   - `ttn-bridge/config.json`, `ttn-bridge/venv/`, `__pycache__/`
 
 ## Service architecture & wiring (non-obvious)
-- **DNS chain** (enforced via router DHCP option 6 = single DNS): `client → Pi-hole:53 (filter) → Unbound:5335 (DNSSEC recursion) → auth servers`. Secondary DNS would bypass Pi-hole.
+- **DNS chain** (enforced via router DHCP option 6 = single DNS): `client → Pi-hole:53 (filter) → Unbound:5335 (cache + local DNSSEC validation) → Quad9/Cloudflare via DoT (TCP 853)`. Secondary DNS would bypass Pi-hole.
 - `pihole/`: Docker, `network_mode: host`. TLS disabled manually (see README) to free 443. v6-specific: `pihole-FTL --config ...` + restart; `misc.etc_dnsmasq_d=true` + `dns.domain.local=false` for .lan forwarding.
-- `unbound/`: **Not Docker**. systemd on host. Copy `unbound/pi-hole.conf` → `/etc/unbound/unbound.conf.d/`. Small caches (8m/16m/8m) to avoid OOM on 905 MiB Pi 3B. `num-threads: 2` (bumped 2026-04-04 after requestlist saturation).
+- `unbound/`: **Not Docker**. systemd on host. Copy `unbound/pi-hole.conf` → `/etc/unbound/unbound.conf.d/`. Forwards via DoT (TCP 853) because the mobile network interferes with plain UDP/53; still validates DNSSEC locally. Small caches (8m/16m/8m) to avoid OOM on 905 MiB Pi 3B. `num-threads: 4` (4-core Pi 3B). `tls-cert-bundle` must be set explicitly or TLS verification of forwarders fails under systemd.
 - `vaultwarden/`: Exposed **only** via `tailscale serve --bg 8222` (no public ports). `DOMAIN` = Tailscale FQDN. Backup via `backup.sh` (sqlite3 .backup + rsync, 7-day retention, syslog tag `backup-vaultwarden` for vigie monitoring).
 - `mosquitto/`: Auth via `config/passwd` (must exist **before** first `up`, else container refuses start). Owned by UID 1883. Version **pinned** `eclipse-mosquitto:2.1.2-alpine` (PBKDF2 hashes; downgrade to 2.0 or upgrade breaks all clients incl. vigie-capteurs).
 - `zigbee2mqtt/`: `network_mode: host`, `/dev/ttyAMA0` (RasPBee 2). Requires `dtoverlay=disable-bt` + disable hciuart in `/boot/firmware/config.txt` + reboot (to free UART from BT).
@@ -53,7 +53,7 @@ Compact guidance for OpenCode (and similar) working in this repo. Derived from C
 - No local equivalents. Use `ssh <user>@pidesk...` or Tailscale for everything.
 
 ## Conventions
-- When documenting non-obvious config (e.g. `unbound/pi-hole.conf:44` `num-threads`, `pihole/dnsmasq.d/03-...`), keep dated comment explaining *why*.
+- When documenting non-obvious config (e.g. `unbound/pi-hole.conf` `num-threads`, `pihole/dnsmasq.d/03-...`), keep a **concise** comment explaining *why*. No dated history in files — that's git's job.
 - Keep .example for secrets/templates; real files gitignored.
 - Ecosystem note: Mosquitto is shared with `vigie-capteurs` (publishes `vigie/*`) and Android `vigie` app. Changes to auth/ports/topics impact them—verify first.
 - Prefer executable sources (compose, .conf, scripts, README steps) over prose when they conflict.

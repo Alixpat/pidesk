@@ -7,7 +7,7 @@ Raspberry Pi 3B de bureau — plateforme de services domestiques.
 - [Matériel](#matériel)
 - [Installation de base](#installation-de-base)
 - [Pi-hole](#pi-hole)
-- [Unbound — résolveur DNS récursif local](#unbound--résolveur-dns-récursif-local)
+- [Unbound — résolveur DNS local (DoT)](#unbound--résolveur-dns-local-dot)
 - [Vaultwarden — gestionnaire de mots de passe](#vaultwarden--gestionnaire-de-mots-de-passe)
 - [Mosquitto — broker MQTT](#mosquitto--broker-mqtt)
 - [TTN Bridge — relais LoRaWAN](#ttn-bridge--relais-lorawan)
@@ -186,12 +186,12 @@ docker exec pihole pihole -v                 # Version
 
 ---
 
-## Unbound — résolveur DNS récursif local
+## Unbound — résolveur DNS local (DoT)
 
-Unbound résout les requêtes DNS directement auprès des serveurs autoritaires (racine → TLD → domaine) sans passer par un intermédiaire (Cloudflare, Google, etc.). Couplé à Pi-hole, il offre filtrage publicitaire + résolution privée.
+Unbound reçoit les requêtes de Pi-hole, les met en cache, valide DNSSEC localement, et les forwarde en **DNS-over-TLS** (TCP/853) vers Quad9 et Cloudflare. Le DoT rend le trafic DNS indiscernable d'HTTPS : l'opérateur mobile ne peut plus ni lire ni casser le DNS (l'UDP/53 clair était parasité sur ce chemin — trous noirs sélectifs).
 
 ```
-Client → Pi-hole (port 53, filtrage) → Unbound (port 5335, récursion) → Serveurs autoritaires
+Client → Pi-hole (port 53, filtrage) → Unbound (port 5335, cache + DNSSEC) → Quad9 / Cloudflare (DoT, TCP 853)
 ```
 
 ### Installation
@@ -263,11 +263,11 @@ Dans **Pi-hole Admin → Settings → DNS** :
 2. Dans **Custom DNS (IPv4)** : `127.0.0.1#5335`
 3. **Ne pas cocher** "Use DNSSEC" — c'est unbound qui gère la validation. Activer les deux provoque des faux positifs.
 
-### Vérifier qu'aucun tiers n'est contacté
+### Vérifier le DoT
 
 ```bash
-# Ne doit montrer aucun trafic vers des résolveurs tiers
-sudo tcpdump -i eth0 port 53 -n | grep -E '1.1.1.1|8.8.8.8|9.9.9.9'
+# Doit montrer des sessions TLS établies vers 9.9.9.9 / 149.112.112.112 / 1.1.1.1
+ss -tn state established '( dport = :853 )'
 ```
 
 ### Maintenance
