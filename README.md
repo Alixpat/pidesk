@@ -396,6 +396,8 @@ Le script conserve les 7 derniers backups sur la machine distante.
 
 Le script logge dans syslog (tag `backup-vaultwarden`). Si `capteur-backup` (voir [vigie-capteurs](https://github.com/Alixpat/vigie-capteurs)) est installé sur le Pi, il détecte les succès/échecs et publie sur MQTT `vigie/backup/vaultwarden` → notification dans l'app Vigie.
 
+Le PiDrive sert aussi de cible à la synchro quotidienne des documents du poste principal : `~/Documents/` → `pidrive:/media/pidrive/DOCS_SYNC/` (script `rsync-to-pidrive.sh` via cron, doc dans le dépôt `~/Documents/rsync`).
+
 ### Commandes utiles
 
 ```bash
