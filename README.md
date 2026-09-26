@@ -760,17 +760,22 @@ docker logs pollux-tunnel 2>&1 | grep trycloudflare   # URL publique
 
 ### Client
 
-Image `pollux:local` (construite sur le Pi) ou le dépôt en local. Le jeton doit
-correspondre à celui du `.env` serveur.
+Sur la machine cliente, récupérer la source pollux (clone si accès GitHub, sinon
+`rsync` depuis le poste) puis utiliser le `.env` + `run-client.sh` fournis :
 
 ```bash
-POLLUX_TOKEN=<SECRET> python tunnel_client.py \
-  --listen-port 2223 --target 127.0.0.1:22 \
-  --server https://<URL>.trycloudflare.com/t \
-  [--proxy http://<PROXY>:<PORT>]
+cp client.env.example .env
+# éditer : POLLUX_SERVER=https://<URL>.trycloudflare.com/t
+#          POLLUX_TOKEN=<= jeton du .env serveur>
+#          POLLUX_PROXY=http://<PROXY>:<PORT>   (si proxy)
+#          POLLUX_LISTEN_PORT=2223   POLLUX_TARGET=127.0.0.1:22
+./run-client.sh          # crée le venv au 1er lancement, puis lance le client
 
 ssh -p 2223 -o StrictHostKeyChecking=accept-new <USER>@127.0.0.1
 ```
+
+Proxy à inspection TLS : la machine cliente doit faire confiance à la CA du
+proxy (sinon `SSLCertVerificationError`).
 
 ### Tests validés
 
