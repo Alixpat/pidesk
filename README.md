@@ -673,11 +673,6 @@ protocole (sinon `CONNECT refusé: version`).
 ssh pidesk 'cd ~/pidesk/pollux && docker compose up -d --build pollux'
 ```
 
-Retour arrière vers l'ancien serveur Python (image gardée sous `pollux-python:rollback`) :
-dans `docker-compose.yml`, remplacer `build: ../../pollux` par
-`image: pollux-python:rollback` et préfixer `command` par `tunnel_server.py`, puis
-`docker compose up -d pollux`.
-
 ### Client
 
 Client : le même exécutable `pollux` (rien à installer), copié avec un `.env` :
