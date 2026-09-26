@@ -701,6 +701,10 @@ cp client.env.example .env
 ssh -p 2223 -o StrictHostKeyChecking=accept-new <USER>@127.0.0.1
 ```
 
+mosh (paquet `mosh` installé sur le Pi et le client) : `POLLUX_UDP=60001-60004` dans le
+`.env` client, puis `mosh --ssh="ssh -p 2223" --port=60001:60004 <USER>@127.0.0.1`
+(une session mosh simultanée par port ; plage autorisée côté serveur par `--allow udp:…`).
+
 Proxy à inspection TLS : la machine cliente doit faire confiance à la CA du
 proxy (sinon `SSLCertVerificationError`).
 

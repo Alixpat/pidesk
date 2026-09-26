@@ -8,7 +8,7 @@ services:
     network_mode: host
     # --ip-header : IP réelle du client dans les logs (fiable car /t n'écoute qu'en
     # local, derrière cloudflared qui écrase CF-Connecting-IP)
-    command: tunnel_server.py --host 127.0.0.1 --port 8081 --allow 127.0.0.1:22 --ip-header CF-Connecting-IP
+    command: tunnel_server.py --host 127.0.0.1 --port 8081 --allow 127.0.0.1:22 --allow udp:127.0.0.1:60001-60004 --ip-header CF-Connecting-IP
     env_file: .env   # POLLUX_TOKEN (jeton partagé exigé du client)
     restart: unless-stopped
 
