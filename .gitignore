@@ -15,8 +15,5 @@ ttn-bridge/config.json
 ttn-bridge/venv/
 ttn-bridge/__pycache__/
 
-# Secret wstunnel, seul .env.example est versionné
-wstunnel/.env
-
 # Secret pollux, seul .env.example est versionné
 pollux/.env
