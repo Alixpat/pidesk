@@ -649,29 +649,40 @@ client pollux ─(proxy)─▶ Cloudflare (https://…trycloudflare.com/t)
 
 ### Lancement (Pi)
 
-Le dépôt pollux est **privé** : le cloner sur le Pi demande un accès GitHub. À
-défaut, pousser la source depuis le poste (le build ne prend que les `.py` +
-`requirements.txt` + `Dockerfile`) :
+Le dépôt pollux est **privé** : le Pi doit s'authentifier sur GitHub pour le
+cloner et le mettre à jour. Créer un **token GitHub fine-grained** (Settings →
+Developer settings → Fine-grained tokens) limité au dépôt `Alixpat/pollux`,
+permission *Contents: Read-only*, puis le mémoriser une fois via le credential
+helper :
 
 ```bash
-# option A — clone (Pi authentifié sur GitHub)
-git clone git@github.com:Alixpat/pollux.git ~/pollux
-# option B — depuis le poste
-rsync -a --exclude .venv --exclude .git ~/Documents/pollux/ pidesk:~/pollux/
+git clone https://github.com/Alixpat/pollux.git ~/pollux
+cd ~/pollux
+git config credential.helper store   # stocke dans ~/.git-credentials (en clair)
+git pull                             # login = <user GitHub>, password = <TOKEN>
+chmod 600 ~/.git-credentials
+```
 
+> À défaut de token, pousser la source depuis le poste (le build ne prend que
+> les `.py` + `requirements.txt` + `Dockerfile`) :
+> `rsync -a --exclude .venv --exclude .git ~/Documents/pollux/ pidesk:~/pollux/`
+
+Puis lancer serveur + tunnel :
+
+```bash
 cd ~/pidesk/pollux
 cp .env.example .env
 sed -i "s/<SECRET>/$(openssl rand -hex 16)/" .env && chmod 600 .env
-docker compose up -d --build   # construit l'image depuis ~/pollux, lance server + tunnel
+docker compose up -d --build   # build l'image depuis ~/pollux, lance server + tunnel
 docker logs pollux-tunnel 2>&1 | grep trycloudflare   # URL publique
 ```
 
 Mise à jour : client et serveur doivent avoir la même version de protocole
-(sinon `CONNECT refusé: version`). Rebuilder seulement `pollux` garde l'URL du tunnel :
+(sinon `CONNECT refusé: version`). `git pull` + rebuild du seul service `pollux`
+(garde l'URL du tunnel) :
 
 ```bash
-rsync -a --exclude .venv --exclude .git ~/Documents/pollux/ pidesk:~/pollux/
-ssh pidesk 'cd ~/pidesk/pollux && docker compose up -d --build pollux'
+ssh pidesk 'cd ~/pollux && git pull && cd ~/pidesk/pollux && docker compose up -d --build pollux'
 ```
 
 ### Client
