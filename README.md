@@ -731,8 +731,7 @@ client pollux ─(proxy)─▶ Cloudflare (https://…trycloudflare.com/t)
 
 - **Testé OK à travers le Quick Tunnel Cloudflare** : bannière + handshake SSH
   complet (~4 s), là où wstunnel/gost sont bufferisés.
-- Débit plafonné par le RTT (un aller-retour par lot) : bon pour SSH interactif,
-  pas pour du transfert.
+- Débit ≈ fenêtre × lot / RTT (`POLLUX_WINDOW`, 8 requêtes en vol par défaut).
 - **Sécurité** : `--allow 127.0.0.1:22` (cible unique) et jeton partagé
   `POLLUX_TOKEN` (en-tête `X-Pollux-Token`, sinon HTTP 403). `pollux/.env` est
   gitignoré, seul `.env.example` est versionné.
@@ -756,6 +755,14 @@ cp .env.example .env
 sed -i "s/<SECRET>/$(openssl rand -hex 16)/" .env && chmod 600 .env
 docker compose up -d --build   # construit l'image depuis ~/pollux, lance server + tunnel
 docker logs pollux-tunnel 2>&1 | grep trycloudflare   # URL publique
+```
+
+Mise à jour : client et serveur doivent avoir la même version de protocole
+(sinon `CONNECT refusé: version`). Rebuilder seulement `pollux` garde l'URL du tunnel :
+
+```bash
+rsync -a --exclude .venv --exclude .git ~/Documents/pollux/ pidesk:~/pollux/
+ssh pidesk 'cd ~/pidesk/pollux && docker compose up -d --build pollux'
 ```
 
 ### Client
