@@ -649,7 +649,7 @@ client pollux ─(proxy)─▶ Cloudflare (https://…trycloudflare.com/t)
 
 ### Lancement (Pi)
 
-Serveur Go (`pollux-server`) + client web. Le Pi ne compile rien (trop peu de RAM) :
+Serveur Go (`pollux server`) + client web. Le Pi ne compile rien (trop peu de RAM) :
 les artefacts sont construits sur le poste puis poussés avec la source.
 
 ```bash
@@ -680,17 +680,17 @@ dans `docker-compose.yml`, remplacer `build: ../../pollux` par
 
 ### Client
 
-Client Go (un seul exécutable, rien à installer) compilé sur le poste pour la
-machine cliente (`GOOS`/`GOARCH` selon elle), copié avec un `.env` :
+Client : le même exécutable `pollux` (rien à installer), copié avec un `.env` :
 
 ```bash
-cd ~/Documents/pollux/go && GOOS=linux GOARCH=amd64 go build -o pollux-client ./cmd/pollux-client
+# exécutable pollux : release GitHub pour la plateforme, ou compilé sur le poste :
+cd ~/Documents/pollux/go && GOOS=linux GOARCH=amd64 go build -o pollux ./cmd/pollux
 cp ../client.env.example .env
 # éditer : POLLUX_SERVER=https://<URL>.trycloudflare.com/t
 #          POLLUX_TOKEN=<= jeton du .env serveur>
 #          POLLUX_PROXY=http://<PROXY>:<PORT>   (si proxy)
 #          POLLUX_LISTEN_PORT=2223   POLLUX_TARGET=127.0.0.1:22
-./pollux-client --env .env                 # ou : ./pollux-client install --env .env (service systemd)
+./pollux client --env .env                 # ou : ./pollux client install --env .env (service systemd)
 
 ssh -p 2223 -o StrictHostKeyChecking=accept-new <USER>@127.0.0.1
 ```
