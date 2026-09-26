@@ -649,27 +649,15 @@ client pollux ─(proxy)─▶ Cloudflare (https://…trycloudflare.com/t)
 
 ### Lancement (Pi)
 
-Le dépôt pollux est **privé** : le Pi doit s'authentifier sur GitHub pour le
-cloner et le mettre à jour. Créer un **token GitHub fine-grained** (Settings →
-Developer settings → Fine-grained tokens) limité au dépôt `Alixpat/pollux`,
-permission *Contents: Read-only*, puis le mémoriser une fois via le credential
-helper :
+Serveur Go (`pollux-server`) + client web. Le Pi ne compile rien (trop peu de RAM) :
+les artefacts sont construits sur le poste puis poussés avec la source.
 
 ```bash
-git clone https://github.com/Alixpat/pollux.git ~/pollux
-cd ~/pollux
-git config credential.helper store   # stocke dans ~/.git-credentials (en clair)
-git pull                             # login = <user GitHub>, password = <TOKEN>
-chmod 600 ~/.git-credentials
-```
+# sur le poste
+cd ~/Documents/pollux && GOARCH=arm64 ./build.sh     # serveur arm64 + client web (WASM)
+rsync -a --delete --exclude .venv --exclude .git ~/Documents/pollux/ pidesk:~/pollux/
 
-> À défaut de token, pousser la source depuis le poste (le build ne prend que
-> les `.py` + `requirements.txt` + `Dockerfile`) :
-> `rsync -a --exclude .venv --exclude .git ~/Documents/pollux/ pidesk:~/pollux/`
-
-Puis lancer serveur + tunnel :
-
-```bash
+# sur le Pi (première fois)
 cd ~/pidesk/pollux
 cp .env.example .env
 sed -i "s/<SECRET>/$(openssl rand -hex 16)/" .env && chmod 600 .env
@@ -677,26 +665,32 @@ docker compose up -d --build   # build l'image depuis ~/pollux, lance server + t
 docker logs pollux-tunnel 2>&1 | grep trycloudflare   # URL publique
 ```
 
-Mise à jour : client et serveur doivent avoir la même version de protocole
-(sinon `CONNECT refusé: version`). `git pull` + rebuild du seul service `pollux`
-(garde l'URL du tunnel) :
+Mise à jour : `build.sh` + `rsync` ci-dessus, puis rebuild du seul service `pollux`
+(garde l'URL du tunnel). Client et serveur doivent parler la même version de
+protocole (sinon `CONNECT refusé: version`).
 
 ```bash
-ssh pidesk 'cd ~/pollux && git pull && cd ~/pidesk/pollux && docker compose up -d --build pollux'
+ssh pidesk 'cd ~/pidesk/pollux && docker compose up -d --build pollux'
 ```
+
+Retour arrière vers l'ancien serveur Python (image gardée sous `pollux-python:rollback`) :
+dans `docker-compose.yml`, remplacer `build: ../../pollux` par
+`image: pollux-python:rollback` et préfixer `command` par `tunnel_server.py`, puis
+`docker compose up -d pollux`.
 
 ### Client
 
-Sur la machine cliente, récupérer la source pollux (clone si accès GitHub, sinon
-`rsync` depuis le poste) puis utiliser le `.env` + `run-client.sh` fournis :
+Client Go (un seul exécutable, rien à installer) compilé sur le poste pour la
+machine cliente (`GOOS`/`GOARCH` selon elle), copié avec un `.env` :
 
 ```bash
-cp client.env.example .env
+cd ~/Documents/pollux/go && GOOS=linux GOARCH=amd64 go build -o pollux-client ./cmd/pollux-client
+cp ../client.env.example .env
 # éditer : POLLUX_SERVER=https://<URL>.trycloudflare.com/t
 #          POLLUX_TOKEN=<= jeton du .env serveur>
 #          POLLUX_PROXY=http://<PROXY>:<PORT>   (si proxy)
 #          POLLUX_LISTEN_PORT=2223   POLLUX_TARGET=127.0.0.1:22
-./run-client.sh          # crée le venv au 1er lancement, puis lance le client
+./pollux-client --env .env                 # ou : ./pollux-client install --env .env (service systemd)
 
 ssh -p 2223 -o StrictHostKeyChecking=accept-new <USER>@127.0.0.1
 ```
@@ -716,6 +710,7 @@ proxy (sinon `SSLCertVerificationError`).
 | Sans jeton / mauvais jeton | Refusé (HTTP 403) |
 | Cible hors `--allow` | Refusée (`forbidden`) |
 | Proxy bufferisant / défaillant (réponses perdues, 502, rejeu) | OK, sans perte (suite pytest) |
+| Serveur Go en production : SSH, 2 mosh simultanés, client web, 4 Mo aller-retour | OK (~130 ms d'écho, 6 Mo de RAM) |
 
 ---
 

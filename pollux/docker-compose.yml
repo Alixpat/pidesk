@@ -1,14 +1,15 @@
 services:
   # Serveur pollux : transport TCP via requêtes HTTP courtes (passe un CDN qui
   # met en tampon, contrairement à wstunnel). Écoute en local, cible = SSH du Pi.
-  # Image construite depuis le dépôt pollux cloné en ~/pollux (cf. README).
+  # Image construite depuis le dépôt pollux en ~/pollux (cf. README) : serveur Go,
+  # artefacts compilés sur le poste (GOARCH=arm64 ./build.sh), pas sur le Pi.
   pollux:
     build: ../../pollux
     container_name: pollux
     network_mode: host
     # --ip-header : IP réelle du client dans les logs (fiable car /t n'écoute qu'en
     # local, derrière cloudflared qui écrase CF-Connecting-IP)
-    command: tunnel_server.py --host 127.0.0.1 --port 8081 --allow 127.0.0.1:22 --allow udp:127.0.0.1:60001-60004 --ip-header CF-Connecting-IP --web web
+    command: --host 127.0.0.1 --port 8081 --allow 127.0.0.1:22 --allow udp:127.0.0.1:60001-60004 --ip-header CF-Connecting-IP --web web
     env_file: .env   # POLLUX_TOKEN (jeton partagé exigé du client)
     restart: unless-stopped
 
