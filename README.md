@@ -428,7 +428,7 @@ cd ~/pidesk/mosquitto
 Créer le fichier de mots de passe et ajouter un utilisateur :
 
 ```bash
-docker run --rm -v $(pwd)/config:/data eclipse-mosquitto:2 \
+docker run --rm -v $(pwd)/config:/data eclipse-mosquitto:2.1.2-alpine \
   mosquitto_passwd -c -b /data/passwd <USER> <PASSWORD>
 ```
 
@@ -441,7 +441,7 @@ chmod 600 config/passwd
 
 > Remplacer `<USER>` et `<PASSWORD>` par les identifiants souhaités. Pour ajouter d'autres utilisateurs par la suite, retirer le flag `-c` (qui recrée le fichier) :
 > ```bash
-> docker run --rm -v $(pwd)/config:/data eclipse-mosquitto:2 \
+> docker run --rm -v $(pwd)/config:/data eclipse-mosquitto:2.1.2-alpine \
 >   mosquitto_passwd -b /data/passwd <USER2> <PASSWORD2>
 > sudo chown 1883:1883 config/passwd
 > ```
