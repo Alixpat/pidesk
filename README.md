@@ -641,9 +641,11 @@ client pollux ─(proxy)─▶ Cloudflare (https://…trycloudflare.com/t)
 - **Testé OK à travers le Quick Tunnel Cloudflare** : bannière + handshake SSH
   complet (~4 s), là où wstunnel/gost sont bufferisés.
 - Débit ≈ fenêtre × lot / RTT (`POLLUX_WINDOW`, 8 requêtes en vol par défaut).
-- **Sécurité** : `--allow 127.0.0.1:22` (cible unique) et jeton partagé
-  `POLLUX_TOKEN` (en-tête `X-Pollux-Token`, sinon HTTP 403). `pollux/.env` est
-  gitignoré, seul `.env.example` est versionné.
+- **Sécurité** : cibles limitées (`--allow`), IP clientes filtrées (`POLLUX_ALLOW_IP`)
+  et secret partagé `POLLUX_TOKEN` qui signe requêtes et réponses sans jamais circuler
+  (invisible même pour un proxy qui déchiffre le TLS). `pollux/.env` est gitignoré,
+  seul `.env.example` est versionné. Changer le secret : `openssl rand -hex 32` dans le
+  `.env` du Pi et des clients, puis redémarrer `pollux` et les clients.
 - Comme wstunnel, l'URL `*.trycloudflare.com` change à chaque redémarrage de
   `pollux-tunnel`.
 
