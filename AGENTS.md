@@ -5,7 +5,7 @@ Source unique : `CLAUDE.md` ne fait que l'importer.
 
 ## Nature du dépôt
 
-Dépôt de **configuration et documentation** pour le Raspberry Pi 3B `pidesk` (services domestiques) : `docker-compose.yml`, fichiers de config, scripts, et un `README.md` qui sert de procédure d'installation pas-à-pas (ordre, commandes, validation). Ni code applicatif à construire, ni tests.
+Dépôt de **configuration et documentation** pour le Raspberry Pi 3B `pidesk` (services domestiques) : `docker-compose.yml`, fichiers de config, scripts, et un `README.md` qui sert de procédure d'installation pas-à-pas (ordre, commandes, validation). Ni code applicatif à construire, ni tests. `ansible/` (lancé depuis le poste) déploie ce qui tourne sur l'hôte hors Docker, secrets dans son vault.
 
 - Un sous-répertoire par service : `pihole/`, `unbound/`, `vaultwarden/`, `mosquitto/`, `zigbee2mqtt/`, `ttn-bridge/`, `pollux/`.
 - Le dépôt vit sur le poste (`latitude`, `~/Documents/pidesk`) ; les services tournent sur `pidesk` (LAN `192.168.2.10`, Tailscale `*.taile766ec.ts.net`). **Tout se lance via SSH ou Tailscale sur le Pi**, jamais localement (docker, systemd…).
@@ -15,7 +15,7 @@ Dépôt de **configuration et documentation** pour le Raspberry Pi 3B `pidesk` (
 ## Placeholders et secrets
 
 - Les fichiers versionnés ne contiennent que des placeholders : `<TAILSCALE_FQDN>`, `<USER>`, `<PASSWORD>`, `<MQTT_USER>`, `<MQTT_PASSWORD>`, `<PI_IP>`, `<BACKUP_HOST>`, `<BACKUP_DIR>`, `<TTN_*>`, `<SECRET>`… Ne jamais committer de valeurs réelles (mots de passe, clés, FQDN, IP clientes) : les instances en prod sont éditées sur `pidesk`. Garder un `.example` pour chaque fichier secret.
-- Gitignorés, présents seulement sur le Pi : `vaultwarden/data/`, `pihole/etc-pihole/`, `pihole/etc-dnsmasq.d/`, `zigbee2mqtt/data/`, `mosquitto/config/passwd`, `mosquitto/config/conf.d/*.conf`, `ttn-bridge/config.json`, `ttn-bridge/venv/`, `pollux/.env`.
+- Gitignorés, présents seulement sur le Pi : `vaultwarden/data/`, `pihole/etc-pihole/`, `pihole/etc-dnsmasq.d/`, `zigbee2mqtt/data/`, `mosquitto/config/passwd`, `mosquitto/config/conf.d/*.conf`, `ttn-bridge/config.json`, `ttn-bridge/venv/`, `pollux/.env`. Gitignorés sur le poste : `ansible/inventory.yml`, `ansible/.vault_pass`, `ansible/host_vars/pidesk/vault.yml`.
 
 ## Services
 
@@ -27,7 +27,7 @@ Chaîne DNS : `client → Pi-hole (53, filtrage) → Unbound (5335, cache + vali
 - `mosquitto/` : auth par `config/passwd`, qui doit exister **avant** le premier `up` (sinon le conteneur refuse de démarrer) et appartenir à l'UID 1883. Image figée `eclipse-mosquitto:2.1.2-alpine` : le hachage du `passwd` dépend de la version (SHA-512 en 2.0, PBKDF2 en 2.1+) ; changer de version sans le regénérer casse l'auth de tous les clients.
 - `zigbee2mqtt/` : `network_mode: host`, `/dev/ttyAMA0` (RasPBee 2) ; exige `dtoverlay=disable-bt` dans `/boot/firmware/config.txt`, `hciuart` désactivé et un redémarrage.
 - `ttn-bridge/` : service Python (paho-mqtt + systemd) qui relaie TTN eu1 ⇄ Mosquitto. Il **remplace** le bridge natif de Mosquitto (rejeté par TTN : « unacceptable protocol version ») ; ne pas le réactiver. Uplinks sur `ttn/devices/<dev>/{up,join,down/*}`, downlinks à publier sur `ttn/devices/<dev>/down/{push,replace}`.
-- `pollux/` : SSH et mosh du Pi à travers des requêtes HTTP courtes (dépôt `Alixpat/pollux`), servis par un Quick Tunnel Cloudflare (`pollux-tunnel`, URL changée à chaque redémarrage du tunnel). Image construite depuis `~/pollux` : le Pi ne compile rien, les artefacts viennent du poste (`GOARCH=arm64 ./build.sh`, puis `rsync`, puis `docker compose up -d --build pollux`, qui garde l'URL). `.env` : `POLLUX_TOKEN` (secret partagé qui signe les échanges, jamais transmis ; même valeur chez les clients) et `POLLUX_ALLOW_IP` (IP clientes vues par Cloudflare). Client et serveur doivent parler la même version de protocole.
+- `pollux/` : SSH et mosh du Pi à travers des requêtes HTTP courtes (dépôt `Alixpat/pollux`), servis par un Quick Tunnel Cloudflare (`pollux-tunnel`, URL changée à chaque redémarrage du tunnel). Image construite depuis `~/pollux` : le Pi ne compile rien, les artefacts viennent du poste (`GOARCH=arm64 ./build.sh`, puis `rsync`, puis `docker compose up -d --build pollux`, qui garde l'URL). `.env` : `POLLUX_TOKEN` (secret partagé qui signe les échanges, jamais transmis ; même valeur chez les clients) et `POLLUX_ALLOW_IP` (IP clientes vues par Cloudflare). Client et serveur doivent parler la même version de protocole. `pollux-url-notify.timer` (systemd, hôte, rôle Ansible `pollux_url_notify`) envoie l'URL par mail à chaque changement ; il la lit sur les métriques de cloudflared (`--metrics 127.0.0.1:20241`, à garder synchro avec le rôle).
 
 ## Commandes utiles (sur le Pi)
 

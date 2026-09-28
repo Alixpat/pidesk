@@ -1,0 +1,19 @@
+---
+# Mail à chaque changement d'URL du Quick Tunnel pollux. Un timer lance chaque
+# minute url-notify.py, qui lit l'URL sur les métriques de cloudflared.
+
+pollux_url_notify_install_dir: /usr/local/lib/pollux-url-notify
+pollux_url_notify_env_file: /etc/pollux-url-notify.env
+# Doit suivre `--metrics` de pollux-tunnel (pollux/docker-compose.yml).
+pollux_url_notify_metrics_url: "http://127.0.0.1:20241/quicktunnel"
+pollux_url_notify_interval: 1min
+
+# Mailo : 465 en SSL implicite, identifiant = adresse complète du compte.
+pollux_url_notify_smtp_host: mail.mailo.com
+pollux_url_notify_smtp_port: 465
+# À définir dans host_vars/pidesk/vault.yml.
+pollux_url_notify_smtp_user: ""
+pollux_url_notify_smtp_password: ""
+# Mailo refuse (554) un From qui n'est ni l'identifiant ni un alias déclaré.
+pollux_url_notify_mail_from: "{{ pollux_url_notify_smtp_user }}"
+pollux_url_notify_mail_to: "{{ pollux_url_notify_smtp_user }}"

@@ -19,7 +19,8 @@ services:
     container_name: pollux-tunnel
     image: cloudflare/cloudflared:latest
     network_mode: host
-    command: tunnel --no-autoupdate --url http://127.0.0.1:8081
+    # Métriques figées en local : url-notify.py y lit l'URL (/quicktunnel).
+    command: tunnel --no-autoupdate --metrics 127.0.0.1:20241 --url http://127.0.0.1:8081
     restart: unless-stopped
     depends_on:
       - pollux

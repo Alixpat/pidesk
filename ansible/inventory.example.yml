@@ -1,0 +1,6 @@
+# Copier vers inventory.yml (gitignoré) et remplacer les valeurs.
+all:
+  hosts:
+    pidesk:
+      ansible_host: <PI_IP>   # IP LAN, ou FQDN Tailscale hors du LAN
+      ansible_user: <USER>    # sudo sans mot de passe

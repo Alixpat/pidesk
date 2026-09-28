@@ -17,3 +17,8 @@ ttn-bridge/__pycache__/
 
 # Secret pollux, seul .env.example est versionné
 pollux/.env
+
+# Ansible : inventaire réel, mot de passe et contenu du vault restent locaux
+ansible/inventory.yml
+ansible/.vault_pass
+ansible/host_vars/pidesk/vault.yml

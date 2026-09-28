@@ -675,6 +675,30 @@ protocole (sinon `CONNECT refusé: version`).
 ssh pidesk 'cd ~/pidesk/pollux && docker compose up -d --build pollux'
 ```
 
+### Mail à chaque changement d'URL
+
+Timer systemd (chaque minute) : `url-notify.py` lit l'URL sur les métriques de
+cloudflared (`127.0.0.1:20241/quicktunnel`) et envoie un mail via SMTP Mailo quand
+elle change (même compte que les digests de `my-llm-rig`). Déployé par Ansible
+depuis le poste (rôle `pollux_url_notify`).
+
+```bash
+# sur le poste, première fois
+cd ~/Documents/pidesk/ansible
+cp inventory.example.yml inventory.yml && $EDITOR inventory.yml
+python3 -c "import secrets; print(secrets.token_urlsafe(32))" > .vault_pass && chmod 600 .vault_pass
+mkdir -p host_vars/pidesk && ansible-vault create host_vars/pidesk/vault.yml
+#   pollux_url_notify_smtp_user: <SMTP_USER>
+#   pollux_url_notify_smtp_password: <SMTP_PASSWORD>
+#   pollux_url_notify_mail_to: <MAIL_TO>
+#   pollux_url_notify_mail_from: <MAIL_FROM>   # alias déclaré chez Mailo (sinon 554)
+
+ansible-playbook site.yml                     # ou --tags pollux_url_notify
+ssh pidesk 'journalctl -u pollux-url-notify'  # « URL envoyée : … »
+```
+
+`inventory.yml`, `.vault_pass` et `host_vars/pidesk/vault.yml` sont gitignorés.
+
 ### Client
 
 Client : le même exécutable `pollux` (rien à installer), copié avec un `.env` :

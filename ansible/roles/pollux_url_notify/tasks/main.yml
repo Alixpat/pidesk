@@ -1,0 +1,55 @@
+---
+- name: Vérifier que les identifiants SMTP sont renseignés
+  ansible.builtin.assert:
+    that:
+      - pollux_url_notify_smtp_user | length > 0
+      - pollux_url_notify_smtp_password | length > 0
+    fail_msg: >-
+      pollux_url_notify_smtp_user et pollux_url_notify_smtp_password doivent
+      être définis (host_vars/pidesk/vault.yml).
+    quiet: true
+
+# Hors du home : l'utilisateur dynamique du service ne peut pas y lire.
+- name: Créer le répertoire d'installation
+  ansible.builtin.file:
+    path: "{{ pollux_url_notify_install_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Déployer url-notify.py
+  ansible.builtin.copy:
+    src: url-notify.py
+    dest: "{{ pollux_url_notify_install_dir }}/url-notify.py"
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Déployer le fichier d'environnement (secrets SMTP)
+  ansible.builtin.template:
+    src: pollux-url-notify.env.j2
+    dest: "{{ pollux_url_notify_env_file }}"
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+
+- name: Déployer le service et le timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - pollux-url-notify.service
+    - pollux-url-notify.timer
+  notify: reload systemd pollux-url-notify
+
+- name: Activer et démarrer le timer
+  ansible.builtin.systemd_service:
+    name: pollux-url-notify.timer
+    state: started
+    enabled: true
+    daemon_reload: true

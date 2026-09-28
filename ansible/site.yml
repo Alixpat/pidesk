@@ -1,0 +1,6 @@
+---
+- name: Configure pidesk
+  hosts: pidesk
+  become: true
+  roles:
+    - { role: pollux_url_notify, tags: [pollux_url_notify, pollux, mail] }
