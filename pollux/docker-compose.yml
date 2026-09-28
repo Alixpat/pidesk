@@ -1,6 +1,6 @@
 services:
   # Serveur pollux : transport TCP via requêtes HTTP courtes (passe un CDN qui
-  # met en tampon, contrairement à wstunnel). Écoute en local, cible = SSH du Pi.
+  # met en tampon). Écoute en local, cible = SSH du Pi.
   # Image construite depuis le dépôt pollux en ~/pollux (cf. README) : serveur Go,
   # artefacts compilés sur le poste (GOARCH=arm64 ./build.sh), pas sur le Pi.
   pollux:

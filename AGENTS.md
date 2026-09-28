@@ -33,7 +33,7 @@ Chaîne DNS : `client → Pi-hole (53, filtrage) → Unbound (5335, cache + vali
 
 ```bash
 docker compose up -d                              # dans le dossier du service
-docker compose pull && docker compose up -d       # mise à jour
+docker compose pull && docker compose up -d       # après changement du tag figé (cf. README « Mises à jour »)
 docker logs -f <service>
 sudo unbound-checkconf && sudo systemctl restart unbound
 sudo tailscale serve --bg 8222 && tailscale serve status
@@ -47,4 +47,5 @@ Les procédures complètes (Pi-hole TLS, Zigbee, TTN, pollux) sont dans le `READ
 
 - Un changement de config non évident garde un commentaire **concis** expliquant *pourquoi* ; pas d'historique daté dans les fichiers (c'est le rôle de git). README court : commandes et tableaux plutôt que prose.
 - Mosquitto est partagé avec `vigie-capteurs` (publie sur `vigie/*`, `~/Documents/vigie-capteurs`) et l'application Android `vigie` : vérifier leur impact avant de toucher à l'auth, aux ports ou aux topics.
+- Les compose du Pi portent les vraies valeurs (FQDN, `SIGNUPS_ALLOWED`…) : y modifier une ligne précise (`sed`), jamais écraser par la version du dépôt.
 - À éviter : lancer des services localement ; supposer un réseau Docker ou des versions par défaut ; committer données, `passwd`, `config.json` ou `.env` remplis ; ajouter un DNS secondaire ; grossir les caches d'Unbound.

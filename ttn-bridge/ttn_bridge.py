@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
 TTN Bridge — relais MQTT bidirectionnel entre The Things Network et le broker
-Mosquitto local. Remplace la directive `connection ttn-eu1` du fichier
-`ttn-bridge.conf` qui ne fonctionne plus depuis le 2026-05-09 (rejet TTN du
-CONNECT envoyé par Mosquitto bridge en 2.0.22 et 2.1.2, alors que mosquitto_pub
-et mosquitto_sub passent sans souci avec les mêmes credentials).
+Mosquitto local. Remplace le bridge natif de Mosquitto (`connection ttn-eu1`),
+dont TTN rejette le CONNECT, alors que mosquitto_pub/sub passent avec les mêmes
+identifiants.
 
 Topologie :
 - TTN  → topic `v3/<user>/devices/<dev>/{up,join,down/sent,...}`

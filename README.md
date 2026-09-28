@@ -39,7 +39,7 @@ sudo rpi-imager
 **Écran de sélection :**
 
 1. **Modèle** : `Raspberry Pi 3`
-2. **OS** : `Raspberry Pi OS (other)` → `Raspberry Pi OS Lite (64-bit)` (Bookworm)
+2. **OS** : `Raspberry Pi OS (other)` → `Raspberry Pi OS Lite (64-bit)` (Trixie)
 3. **Stockage** : sélectionner la carte SD
 
 **Personnalisation OS** : configurer hostname, utilisateur, WiFi, timezone (`Europe/Paris`), clavier (`fr`), et activer SSH par clé publique.
@@ -61,6 +61,21 @@ sudo usermod -aG docker $USER
 ```
 
 Se déconnecter/reconnecter pour appliquer le groupe `docker`.
+
+### Mises à jour
+
+```bash
+sudo apt update && sudo apt full-upgrade
+sudo reboot            # si /var/run/reboot-required existe (nouveau kernel)
+```
+
+Une mise à jour de `docker-ce` redémarre tous les conteneurs : l'URL du tunnel pollux
+change (un mail la donne, cf. [pollux](#mail-à-chaque-changement-durl)).
+
+Les images sont figées : changer le tag dans le `docker-compose.yml` (dépôt et Pi),
+sauvegarder les données du service, puis `docker compose pull && docker compose up -d`.
+Ne pas changer celui de Mosquitto sans regénérer `passwd` (cf. [Mosquitto](#mosquitto--broker-mqtt)).
+Ménage : `docker image prune -a && docker builder prune -a`.
 
 ### 4. Tailscale
 
@@ -88,7 +103,7 @@ Vérifier le nom de la connexion :
 nmcli con show
 ```
 
-> Sur Bookworm avec cloud-init, la connexion Ethernet s'appelle `netplan-eth0`.
+> Avec cloud-init, la connexion Ethernet s'appelle `netplan-eth0`.
 
 ```bash
 sudo nmcli con mod "netplan-eth0" \
@@ -180,7 +195,6 @@ dig @127.0.0.1 +short -x 192.168.2.246   # → pidrive.lan.
 
 ```bash
 docker logs -f pihole                        # Logs
-docker compose pull && docker compose up -d  # Mise à jour
 docker exec pihole pihole status             # Status
 docker exec pihole pihole -v                 # Version
 ```
@@ -397,13 +411,10 @@ Le script conserve les 7 derniers backups sur la machine distante.
 
 Le script logge dans syslog (tag `backup-vaultwarden`). Si `capteur-backup` (voir [vigie-capteurs](https://github.com/Alixpat/vigie-capteurs)) est installé sur le Pi, il détecte les succès/échecs et publie sur MQTT `vigie/backup/vaultwarden` → notification dans l'app Vigie.
 
-Le PiDrive sert aussi de cible à la synchro quotidienne des documents du poste principal : `~/Documents/` → `pidrive:/media/pidrive/DOCS_SYNC/` (script `rsync-to-pidrive.sh` via cron, doc dans le dépôt `~/Documents/rsync`).
-
 ### Commandes utiles
 
 ```bash
 docker logs -f vaultwarden                        # Logs
-docker compose pull && docker compose up -d       # Mise à jour
 docker compose restart                            # Redémarrer
 ```
 
@@ -490,7 +501,6 @@ Le message `Bonjour MQTT` doit apparaître dans le premier terminal.
 
 ```bash
 docker logs -f mosquitto                        # Logs
-docker compose pull && docker compose up -d     # Mise à jour
 docker compose restart                          # Redémarrer
 ```
 
@@ -503,13 +513,8 @@ Service Python (paho-mqtt + systemd) qui relaye The Things Stack Community
 downlinks publiables depuis le LAN. Le code est dans le répertoire
 [`ttn-bridge/`](ttn-bridge/) du dépôt.
 
-> Pourquoi un service Python plutôt que la directive `connection ttn-eu1`
-> du bridge mosquitto natif ? Le bridge mosquitto a été rejeté par TTN à
-> partir du 2026-05-09 avec « unacceptable protocol version » (mqttv311) ou
-> disconnect silencieux (mqttv50), sur les versions 2.0.22 ET 2.1.2, alors
-> que `mosquitto_pub`/`_sub` du même conteneur passent avec les mêmes
-> credentials. Le fichier `mosquitto/config/conf.d/ttn-bridge.conf` est
-> renommé en `.disabled` sur le Pi (gitignored).
+> Le bridge natif de Mosquitto (`connection ttn-eu1`) est rejeté par TTN
+> (« unacceptable protocol version ») : ne pas le réactiver.
 
 Topics après installation :
 
@@ -620,7 +625,6 @@ Mettre l'appareil Zigbee en mode appairage (selon la doc du fabricant). Zigbee2M
 
 ```bash
 docker logs -f zigbee2mqtt                        # Logs
-docker compose pull && docker compose up -d       # Mise à jour
 docker compose restart                            # Redémarrer
 ```
 
@@ -628,26 +632,23 @@ docker compose restart                            # Redémarrer
 
 ## pollux — SSH via requêtes HTTP courtes
 
-Même objectif que wstunnel (SSH du Pi malgré le CGNAT 4G), mais un transport qui
-passe là où wstunnel échoue : chaque échange est une **requête/réponse HTTP
-courte et complète** (`Content-Length` fixe, pas de flux), donc traverse un CDN
-ou un proxy qui met en tampon. Dépôt : `Alixpat/pollux`.
+SSH et mosh du Pi malgré le CGNAT 4G : chaque échange est une **requête/réponse
+HTTP courte et complète** (`Content-Length` fixe, pas de flux), donc traverse un
+CDN ou un proxy qui met en tampon. Dépôt : `Alixpat/pollux`.
 
 ```
 client pollux ─(proxy)─▶ Cloudflare (https://…trycloudflare.com/t)
   ─▶ cloudflared (Pi) ─▶ pollux server 127.0.0.1:8081 ─▶ localhost:22
 ```
 
-- **Testé OK à travers le Quick Tunnel Cloudflare** : bannière + handshake SSH
-  complet (~4 s), là où wstunnel/gost sont bufferisés.
 - Débit ≈ fenêtre × lot / RTT (`POLLUX_WINDOW`, 8 requêtes en vol par défaut).
 - **Sécurité** : cibles limitées (`--allow`), IP clientes filtrées (`POLLUX_ALLOW_IP`)
   et secret partagé `POLLUX_TOKEN` qui signe requêtes et réponses sans jamais circuler
   (invisible même pour un proxy qui déchiffre le TLS). `pollux/.env` est gitignoré,
   seul `.env.example` est versionné. Changer le secret : `openssl rand -hex 32` dans le
   `.env` du Pi et des clients, puis redémarrer `pollux` et les clients.
-- Comme wstunnel, l'URL `*.trycloudflare.com` change à chaque redémarrage de
-  `pollux-tunnel`.
+- L'URL `*.trycloudflare.com` change à chaque redémarrage de `pollux-tunnel`
+  (y compris celui de Docker ou du Pi) : elle est envoyée par mail.
 
 ### Lancement (Pi)
 
@@ -679,8 +680,7 @@ ssh pidesk 'cd ~/pidesk/pollux && docker compose up -d --build pollux'
 
 Timer systemd (chaque minute) : `url-notify.py` lit l'URL sur les métriques de
 cloudflared (`127.0.0.1:20241/quicktunnel`) et envoie un mail via SMTP Mailo quand
-elle change (même compte que les digests de `my-llm-rig`). Déployé par Ansible
-depuis le poste (rôle `pollux_url_notify`).
+elle change. Déployé par Ansible depuis le poste (rôle `pollux_url_notify`).
 
 ```bash
 # sur le poste, première fois
@@ -730,7 +730,6 @@ proxy (sinon `SSLCertVerificationError`).
 | Bannière + handshake SSH via Quick Tunnel Cloudflare | OK (~4 s) |
 | Sans jeton / mauvais jeton | Refusé (HTTP 403) |
 | Cible hors `--allow` | Refusée (`forbidden`) |
-| Proxy bufferisant / défaillant (réponses perdues, 502, rejeu) | OK, sans perte (suite pytest) |
 | Serveur Go en production : SSH, 2 mosh simultanés, client web, 4 Mo aller-retour | OK (~130 ms d'écho, 6 Mo de RAM) |
 
 ---

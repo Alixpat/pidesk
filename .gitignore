@@ -7,7 +7,7 @@ zigbee2mqtt/data/
 # Fichier `passwd` Mosquitto (hashes locaux)
 mosquitto/config/passwd
 
-# Confs bridge avec secrets, seul .example est versionné
+# Confs Mosquitto additionnelles, propres au Pi
 mosquitto/config/conf.d/*.conf
 
 # Conf ttn-bridge (Python) avec secrets, seul .example est versionné
