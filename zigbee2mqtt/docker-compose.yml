@@ -1,8 +1,8 @@
 services:
   zigbee2mqtt:
     container_name: zigbee2mqtt
-    # Pinné à 2.13.0 le 2026-08-06 après mise à jour et vérification (MQTT connecté, démarrage propre, 0 devices pour l'instant)
-    image: koenkk/zigbee2mqtt:2.13.0
+    # Version figée : une mise à jour se fait exprès (sauvegarde, tag changé ici, pull, vérification).
+    image: koenkk/zigbee2mqtt:2.14.1
     restart: unless-stopped
     environment:
       - TZ=Europe/Paris

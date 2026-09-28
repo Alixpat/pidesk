@@ -1,8 +1,8 @@
 services:
   vaultwarden:
     container_name: vaultwarden
-    # Pinné à 1.37.1 le 2026-08-06 après mise à jour et vérification (Rocket lancé, logins OK, SIGNUPS=false)
-    image: vaultwarden/server:1.37.1
+    # Version figée : une mise à jour se fait exprès (sauvegarde, tag changé ici, pull, vérification).
+    image: vaultwarden/server:1.37.3
     ports:
       - "8222:80"
     environment:
