@@ -1,6 +1,0 @@
----
-# Un oneshot ne se redémarre pas : le prochain passage du timer prend la
-# nouvelle configuration.
-- name: reload systemd pollux-url-notify
-  ansible.builtin.systemd_service:
-    daemon_reload: true

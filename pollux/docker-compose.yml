@@ -1,7 +1,8 @@
 services:
-  # Serveur pollux : transport TCP via requêtes HTTP courtes (passe un CDN qui
-  # met en tampon). Écoute en local, cible = SSH du Pi. Clients en ligne de
-  # commande seulement : le client web est servi par pollux-web (connexion Google).
+  # Serveur pollux : transport TCP via requêtes HTTP courtes (passe un proxy qui
+  # met en tampon), cible = SSH du Pi. Client web (terminal SSH) sur / réservé aux
+  # comptes Google de web.env ; /t (clients en ligne de commande et page) protégé
+  # par le jeton. Les deux filtrés par POLLUX_ALLOW_IP.
   # Image construite depuis le dépôt pollux en ~/pollux (cf. README) : serveur Go,
   # artefacts compilés sur le poste (GOARCH=arm64 ./build.sh), pas sur le Pi.
   pollux:
@@ -9,49 +10,20 @@ services:
     image: pollux:local
     container_name: pollux
     network_mode: host
-    # --ip-header : IP réelle du client dans les logs (fiable car /t n'écoute qu'en
-    # local, derrière cloudflared qui écrase CF-Connecting-IP)
-    command: --host 127.0.0.1 --port 8081 --allow 127.0.0.1:22 --allow udp:127.0.0.1:60001-60004 --ip-header CF-Connecting-IP
-    env_file: .env   # POLLUX_TOKEN (secret partagé), POLLUX_ALLOW_IP
-    restart: unless-stopped
-
-  # Quick Tunnel Cloudflare : gratuit, sans compte. L'URL *.trycloudflare.com
-  # change à chaque redémarrage (voir `docker logs pollux-tunnel`).
-  pollux-tunnel:
-    container_name: pollux-tunnel
-    image: cloudflare/cloudflared:latest
-    network_mode: host
-    # Métriques figées en local : url-notify.py y lit l'URL (/quicktunnel).
-    command: tunnel --no-autoupdate --metrics 127.0.0.1:20241 --url http://127.0.0.1:8081
-    restart: unless-stopped
-    depends_on:
-      - pollux
-
-  # Client web (terminal SSH dans le navigateur) réservé aux comptes Google de
-  # web.env ; /t reste protégé par le seul jeton. Instance séparée : sans
-  # --ip-header ni POLLUX_ALLOW_IP, car derrière Funnel un CF-Connecting-IP forgé
-  # contournerait le filtre d'IP.
-  pollux-web:
-    image: pollux:local
-    pull_policy: never
-    container_name: pollux-web
-    network_mode: host
-    command: --host 127.0.0.1 --port 8082 --allow 127.0.0.1:22 --web web
+    # --ip-header : Funnel remplace X-Forwarded-For par l'IP réelle du client (un
+    # en-tête forgé est écrasé) ; fiable car pollux n'écoute qu'en local.
+    command: --host 127.0.0.1 --port 8081 --allow 127.0.0.1:22 --allow udp:127.0.0.1:60001-60004 --ip-header X-Forwarded-For --web web
     env_file:
-      - .env       # POLLUX_TOKEN
+      - .env       # POLLUX_TOKEN (secret partagé), POLLUX_ALLOW_IP
       - web.env    # POLLUX_OIDC_* (client OAuth, URL publique, e-mails autorisés)
-    environment:
-      POLLUX_ALLOW_IP: ""
     restart: unless-stopped
-    depends_on:
-      - pollux
 
-  # Nœud Tailscale dédié : Funnel publie pollux-web sur https://pollux.<tailnet>.ts.net
+  # Nœud Tailscale dédié : Funnel publie pollux sur https://pollux.<tailnet>.ts.net
   # (port 443 ; celui de pidesk sert Vaultwarden au seul tailnet). Userspace :
-  # pas de /dev/net/tun ; réseau de l'hôte pour joindre 127.0.0.1:8082.
-  pollux-web-ts:
+  # pas de /dev/net/tun ; réseau de l'hôte pour joindre 127.0.0.1:8081.
+  pollux-ts:
     image: tailscale/tailscale:v1.102.4
-    container_name: pollux-web-ts
+    container_name: pollux-ts
     network_mode: host
     env_file: ts.env   # TS_AUTHKEY (premier démarrage seulement)
     environment:
@@ -66,4 +38,4 @@ services:
       - ./serve.json:/config/serve.json:ro
     restart: unless-stopped
     depends_on:
-      - pollux-web
+      - pollux

@@ -69,9 +69,6 @@ sudo apt update && sudo apt full-upgrade
 sudo reboot            # si /var/run/reboot-required existe (nouveau kernel)
 ```
 
-Une mise à jour de `docker-ce` redémarre tous les conteneurs : l'URL du tunnel pollux
-change (un mail la donne, cf. [pollux](#mail-à-chaque-changement-durl)).
-
 Les images sont figées : changer le tag dans le `docker-compose.yml` (dépôt et Pi),
 sauvegarder les données du service, puis `docker compose pull && docker compose up -d`.
 Ne pas changer celui de Mosquitto sans regénérer `passwd` (cf. [Mosquitto](#mosquitto--broker-mqtt)).
@@ -634,31 +631,34 @@ docker compose restart                            # Redémarrer
 
 SSH et mosh du Pi malgré le CGNAT 4G : chaque échange est une **requête/réponse
 HTTP courte et complète** (`Content-Length` fixe, pas de flux), donc traverse un
-CDN ou un proxy qui met en tampon. Dépôt : `Alixpat/pollux`.
+proxy qui met en tampon. Dépôt : `Alixpat/pollux`.
 
 ```
-client pollux ─(proxy)─▶ Cloudflare (https://…trycloudflare.com/t)
-  ─▶ cloudflared (Pi) ─▶ pollux 127.0.0.1:8081 ─▶ localhost:22
-navigateur ─▶ Tailscale Funnel (https://pollux.<TAILNET>.ts.net, connexion Google)
-  ─▶ pollux-web-ts (Pi) ─▶ pollux-web 127.0.0.1:8082 ─▶ localhost:22
+client pollux / navigateur ─(proxy)─▶ Tailscale Funnel (https://pollux.<TAILNET>.ts.net)
+  ─▶ pollux-ts (Pi, nœud Tailscale dédié) ─▶ pollux 127.0.0.1:8081 ─▶ localhost:22
 ```
+
+| Accès | Protection |
+|---|---|
+| Page web `/` (terminal SSH) | IP autorisée + compte Google (`web.env`) + jeton |
+| `/t` (clients en ligne de commande, page) | IP autorisée + jeton |
 
 - Débit ≈ fenêtre × lot / RTT (`POLLUX_WINDOW`, 8 requêtes en vol par défaut).
-- **Sécurité** : cibles limitées (`--allow`), IP clientes filtrées (`POLLUX_ALLOW_IP`)
-  et secret partagé `POLLUX_TOKEN` qui signe requêtes et réponses sans jamais circuler
-  (invisible même pour un proxy qui déchiffre le TLS). `pollux/.env` est gitignoré,
-  seul `.env.example` est versionné. Changer le secret : `openssl rand -hex 32` dans le
-  `.env` du Pi et des clients, puis redémarrer `pollux`, `pollux-web` et les clients.
-- **Client web** (`pollux-web`) : page réservée aux comptes Google de `web.env`, `/t`
-  protégé par le seul jeton. Instance séparée, sans filtre d'IP : derrière Funnel, un
-  `CF-Connecting-IP` forgé le contournerait.
-- L'URL `*.trycloudflare.com` change à chaque redémarrage de `pollux-tunnel`
-  (y compris celui de Docker ou du Pi) : elle est envoyée par mail.
+- **IP clientes** (`POLLUX_ALLOW_IP` dans `.env`) : lues dans `X-Forwarded-For`, que
+  Funnel remplace par l'IP réelle (un en-tête forgé est écrasé ; vérifié). IP 4G
+  changeante : l'ajouter à la liste puis `docker compose up -d pollux`.
+- **Jeton** `POLLUX_TOKEN` : signe requêtes et réponses sans jamais circuler (invisible
+  même pour un proxy qui déchiffre le TLS). Changer le secret : `openssl rand -hex 32`
+  dans le `.env` du Pi et des clients, puis redémarrer `pollux` et les clients.
+- **Nœud dédié** : le 443 de `pidesk` sert Vaultwarden au seul tailnet et ne doit pas
+  passer en Funnel. `pollux-ts` tourne en userspace (réseau de l'hôte, socket et port
+  WireGuard distincts du tailscaled de l'hôte).
+- `.env`, `web.env`, `ts.env` et `ts-state/` sont gitignorés ; seuls les `.example` sont versionnés.
 
 ### Lancement (Pi)
 
-Serveur Go (`pollux server`), client web et nœud Tailscale dédié. Le Pi ne compile
-rien (trop peu de RAM) : les artefacts sont construits sur le poste puis poussés avec la source.
+Le Pi ne compile rien (trop peu de RAM) : les artefacts sont construits sur le poste
+puis poussés avec la source.
 
 ```bash
 # sur le poste
@@ -667,65 +667,29 @@ rsync -a --delete --exclude .venv --exclude .git ~/Documents/pollux/ pidesk:~/po
 
 # sur le Pi (première fois)
 cd ~/pidesk/pollux
-cp .env.example .env
-sed -i "s/<SECRET>/$(openssl rand -hex 16)/" .env && chmod 600 .env
-cp web.env.example web.env && cp ts.env.example ts.env && chmod 600 web.env ts.env
-$EDITOR web.env ts.env          # cf. « Client web » ci-dessous
-docker compose up -d --build    # build l'image depuis ~/pollux, lance les 4 services
-docker logs pollux-tunnel 2>&1 | grep trycloudflare   # URL publique
+for f in .env web.env ts.env; do cp $f.example $f; done && chmod 600 .env web.env ts.env
+sed -i "s/<SECRET>/$(openssl rand -hex 32)/" .env
+$EDITOR .env web.env ts.env     # IP autorisées, client Google, clé Tailscale (ci-dessous)
+docker compose up -d --build    # build l'image depuis ~/pollux, lance pollux + pollux-ts
 ```
-
-Mise à jour : `build.sh` + `rsync` ci-dessus, puis rebuild des services `pollux` et
-`pollux-web` (même image ; garde l'URL du tunnel). Client et serveur doivent parler la
-même version de protocole (sinon `CONNECT refusé: version`).
-
-```bash
-ssh pidesk 'cd ~/pidesk/pollux && docker compose up -d --build pollux pollux-web'
-```
-
-### Client web (connexion Google)
-
-Terminal SSH dans le navigateur sur `https://pollux.<TAILNET>.ts.net`, publié par
-Tailscale Funnel depuis un nœud dédié (`pollux-web-ts`, userspace) : le 443 de
-`pidesk` sert Vaultwarden au seul tailnet et ne doit pas passer en Funnel.
 
 1. Console Tailscale > Settings > Keys : clé d'auth **sans tag**, non réutilisable,
-   non éphémère → `TS_AUTHKEY` dans `ts.env` (lue au premier démarrage, état dans `ts-state/`).
-   Funnel doit être autorisé aux membres (`nodeAttrs` `funnel` de la politique d'accès).
-2. Console Tailscale > Machines > `pollux` : **Disable key expiry** (sinon Funnel
-   tombe à l'expiration de la clé du nœud).
+   non éphémère → `ts.env` (lue au premier démarrage, état dans `ts-state/`). Funnel
+   doit être autorisé aux membres (`nodeAttrs` `funnel` de la politique d'accès).
+2. Console Tailscale > Machines > `pollux` : **Disable key expiry**.
 3. Client OAuth Google « Application Web », redirection
    `https://pollux.<TAILNET>.ts.net/oidc/callback` → `web.env`.
 
-```bash
-docker logs pollux-web          # « client web réservé (OIDC …) à : … »
-docker exec pollux-web-ts tailscale --socket /var/lib/tailscale/tailscaled.sock funnel status
-```
+L'enregistrement DNS public du nom Funnel peut mettre ~20 min à apparaître.
 
-L'enregistrement DNS public du nom Funnel peut mettre une dizaine de minutes à apparaître.
-
-### Mail à chaque changement d'URL
-
-Timer systemd (chaque minute) : `url-notify.py` lit l'URL sur les métriques de
-cloudflared (`127.0.0.1:20241/quicktunnel`) et envoie un mail via SMTP Mailo quand
-elle change. Déployé par Ansible depuis le poste (rôle `pollux_url_notify`).
+Mise à jour : `build.sh` + `rsync` ci-dessus, puis rebuild. Client et serveur doivent
+parler la même version de protocole (sinon `CONNECT refusé: version`).
 
 ```bash
-# sur le poste, première fois
-cd ~/Documents/pidesk/ansible
-cp inventory.example.yml inventory.yml && $EDITOR inventory.yml
-python3 -c "import secrets; print(secrets.token_urlsafe(32))" > .vault_pass && chmod 600 .vault_pass
-mkdir -p host_vars/pidesk && ansible-vault create host_vars/pidesk/vault.yml
-#   pollux_url_notify_smtp_user: <SMTP_USER>
-#   pollux_url_notify_smtp_password: <SMTP_PASSWORD>
-#   pollux_url_notify_mail_to: <MAIL_TO>
-#   pollux_url_notify_mail_from: <MAIL_FROM>   # alias déclaré chez Mailo (sinon 554)
-
-ansible-playbook site.yml                     # ou --tags pollux_url_notify
-ssh pidesk 'journalctl -u pollux-url-notify'  # « URL envoyée : … »
+ssh pidesk 'cd ~/pidesk/pollux && docker compose up -d --build pollux'
+docker logs pollux              # IP autorisées, « client web réservé (OIDC …) à : … »
+docker exec pollux-ts tailscale --socket /var/lib/tailscale/tailscaled.sock funnel status
 ```
-
-`inventory.yml`, `.vault_pass` et `host_vars/pidesk/vault.yml` sont gitignorés.
 
 ### Client
 
@@ -735,7 +699,7 @@ Client : le même exécutable `pollux` (rien à installer), copié avec un `.env
 # exécutable pollux : release GitHub pour la plateforme, ou compilé sur le poste :
 cd ~/Documents/pollux/go && GOOS=linux GOARCH=amd64 go build -o pollux ./cmd/pollux
 cp ../client.env.example .env
-# éditer : POLLUX_SERVER=https://<URL>.trycloudflare.com/t
+# éditer : POLLUX_SERVER=https://pollux.<TAILNET>.ts.net/t
 #          POLLUX_TOKEN=<= jeton du .env serveur>
 #          POLLUX_PROXY=http://<PROXY>:<PORT>   (si proxy)
 #          POLLUX_LISTEN_PORT=2223   POLLUX_TARGET=127.0.0.1:22
@@ -755,7 +719,10 @@ proxy (sinon `SSLCertVerificationError`).
 
 | Test | Résultat |
 |---|---|
-| Bannière + handshake SSH via Quick Tunnel Cloudflare | OK (~4 s) |
+| Bannière SSH via Tailscale Funnel (client en ligne de commande) | OK |
+| Page `/` : connexion Google, puis terminal | OK |
+| IP hors `POLLUX_ALLOW_IP` (page et `/t`) | Refusée (HTTP 403) |
+| `X-Forwarded-For` forgé à travers Funnel | Écrasé par l'IP réelle |
 | Sans jeton / mauvais jeton | Refusé (HTTP 403) |
 | Cible hors `--allow` | Refusée (`forbidden`) |
 | Serveur Go en production : SSH, 2 mosh simultanés, client web, 4 Mo aller-retour | OK (~130 ms d'écho, 6 Mo de RAM) |
