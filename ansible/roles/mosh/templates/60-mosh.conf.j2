@@ -1,0 +1,3 @@
+# Géré par Ansible (rôle mosh). mosh-server hérite de l'environnement de la
+# session SSH qui le lance ; ~/.bashrc n'est pas lu pour une commande distante.
+SetEnv MOSH_SERVER_NETWORK_TMOUT={{ mosh_server_network_timeout }}

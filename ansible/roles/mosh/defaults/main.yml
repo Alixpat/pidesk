@@ -1,0 +1,5 @@
+---
+# mosh-server se termine s'il n'a plus de nouvelles du client pendant ce délai
+# (secondes). Sans lui, une session abandonnée garde son port pour toujours :
+# pollux ne relaie que 60001-60004, soit 4 sessions.
+mosh_server_network_timeout: 259200   # 72 h : couvre un week-end

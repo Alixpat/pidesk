@@ -1,7 +1,7 @@
 ---
-# Services de l'hôte (hors Docker). Aucun rôle pour l'instant : le mail d'URL du
-# Quick Tunnel pollux a disparu avec le tunnel (pollux passe par Tailscale Funnel).
+# Services de l'hôte (hors Docker).
 - name: Configure pidesk
   hosts: pidesk
   become: true
-  roles: []
+  roles:
+    - { role: mosh, tags: [mosh] }

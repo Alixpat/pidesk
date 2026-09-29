@@ -1,0 +1,11 @@
+---
+- name: Délai d'inactivité de mosh-server (variable passée par sshd)
+  ansible.builtin.template:
+    src: 60-mosh.conf.j2
+    dest: /etc/ssh/sshd_config.d/60-mosh.conf
+    owner: root
+    group: root
+    mode: '0644'
+    # config complète revérifiée avec le nouveau fichier avant rechargement
+    validate: /bin/sh -c 'cp %s /etc/ssh/sshd_config.d/60-mosh.validate.conf && /usr/sbin/sshd -t; r=$?; rm -f /etc/ssh/sshd_config.d/60-mosh.validate.conf; exit $r'
+  notify: reload ssh
