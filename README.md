@@ -638,7 +638,9 @@ CDN ou un proxy qui met en tampon. Dépôt : `Alixpat/pollux`.
 
 ```
 client pollux ─(proxy)─▶ Cloudflare (https://…trycloudflare.com/t)
-  ─▶ cloudflared (Pi) ─▶ pollux server 127.0.0.1:8081 ─▶ localhost:22
+  ─▶ cloudflared (Pi) ─▶ pollux 127.0.0.1:8081 ─▶ localhost:22
+navigateur ─▶ Tailscale Funnel (https://pollux.<TAILNET>.ts.net, connexion Google)
+  ─▶ pollux-web-ts (Pi) ─▶ pollux-web 127.0.0.1:8082 ─▶ localhost:22
 ```
 
 - Débit ≈ fenêtre × lot / RTT (`POLLUX_WINDOW`, 8 requêtes en vol par défaut).
@@ -646,14 +648,17 @@ client pollux ─(proxy)─▶ Cloudflare (https://…trycloudflare.com/t)
   et secret partagé `POLLUX_TOKEN` qui signe requêtes et réponses sans jamais circuler
   (invisible même pour un proxy qui déchiffre le TLS). `pollux/.env` est gitignoré,
   seul `.env.example` est versionné. Changer le secret : `openssl rand -hex 32` dans le
-  `.env` du Pi et des clients, puis redémarrer `pollux` et les clients.
+  `.env` du Pi et des clients, puis redémarrer `pollux`, `pollux-web` et les clients.
+- **Client web** (`pollux-web`) : page réservée aux comptes Google de `web.env`, `/t`
+  protégé par le seul jeton. Instance séparée, sans filtre d'IP : derrière Funnel, un
+  `CF-Connecting-IP` forgé le contournerait.
 - L'URL `*.trycloudflare.com` change à chaque redémarrage de `pollux-tunnel`
   (y compris celui de Docker ou du Pi) : elle est envoyée par mail.
 
 ### Lancement (Pi)
 
-Serveur Go (`pollux server`) + client web. Le Pi ne compile rien (trop peu de RAM) :
-les artefacts sont construits sur le poste puis poussés avec la source.
+Serveur Go (`pollux server`), client web et nœud Tailscale dédié. Le Pi ne compile
+rien (trop peu de RAM) : les artefacts sont construits sur le poste puis poussés avec la source.
 
 ```bash
 # sur le poste
@@ -664,17 +669,40 @@ rsync -a --delete --exclude .venv --exclude .git ~/Documents/pollux/ pidesk:~/po
 cd ~/pidesk/pollux
 cp .env.example .env
 sed -i "s/<SECRET>/$(openssl rand -hex 16)/" .env && chmod 600 .env
-docker compose up -d --build   # build l'image depuis ~/pollux, lance server + tunnel
+cp web.env.example web.env && cp ts.env.example ts.env && chmod 600 web.env ts.env
+$EDITOR web.env ts.env          # cf. « Client web » ci-dessous
+docker compose up -d --build    # build l'image depuis ~/pollux, lance les 4 services
 docker logs pollux-tunnel 2>&1 | grep trycloudflare   # URL publique
 ```
 
-Mise à jour : `build.sh` + `rsync` ci-dessus, puis rebuild du seul service `pollux`
-(garde l'URL du tunnel). Client et serveur doivent parler la même version de
-protocole (sinon `CONNECT refusé: version`).
+Mise à jour : `build.sh` + `rsync` ci-dessus, puis rebuild des services `pollux` et
+`pollux-web` (même image ; garde l'URL du tunnel). Client et serveur doivent parler la
+même version de protocole (sinon `CONNECT refusé: version`).
 
 ```bash
-ssh pidesk 'cd ~/pidesk/pollux && docker compose up -d --build pollux'
+ssh pidesk 'cd ~/pidesk/pollux && docker compose up -d --build pollux pollux-web'
 ```
+
+### Client web (connexion Google)
+
+Terminal SSH dans le navigateur sur `https://pollux.<TAILNET>.ts.net`, publié par
+Tailscale Funnel depuis un nœud dédié (`pollux-web-ts`, userspace) : le 443 de
+`pidesk` sert Vaultwarden au seul tailnet et ne doit pas passer en Funnel.
+
+1. Console Tailscale > Settings > Keys : clé d'auth **sans tag**, non réutilisable,
+   non éphémère → `TS_AUTHKEY` dans `ts.env` (lue au premier démarrage, état dans `ts-state/`).
+   Funnel doit être autorisé aux membres (`nodeAttrs` `funnel` de la politique d'accès).
+2. Console Tailscale > Machines > `pollux` : **Disable key expiry** (sinon Funnel
+   tombe à l'expiration de la clé du nœud).
+3. Client OAuth Google « Application Web », redirection
+   `https://pollux.<TAILNET>.ts.net/oidc/callback` → `web.env`.
+
+```bash
+docker logs pollux-web          # « client web réservé (OIDC …) à : … »
+docker exec pollux-web-ts tailscale --socket /var/lib/tailscale/tailscaled.sock funnel status
+```
+
+L'enregistrement DNS public du nom Funnel peut mettre une dizaine de minutes à apparaître.
 
 ### Mail à chaque changement d'URL
 

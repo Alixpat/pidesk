@@ -1,15 +1,17 @@
 services:
   # Serveur pollux : transport TCP via requêtes HTTP courtes (passe un CDN qui
-  # met en tampon). Écoute en local, cible = SSH du Pi.
+  # met en tampon). Écoute en local, cible = SSH du Pi. Clients en ligne de
+  # commande seulement : le client web est servi par pollux-web (connexion Google).
   # Image construite depuis le dépôt pollux en ~/pollux (cf. README) : serveur Go,
   # artefacts compilés sur le poste (GOARCH=arm64 ./build.sh), pas sur le Pi.
   pollux:
     build: ../../pollux
+    image: pollux:local
     container_name: pollux
     network_mode: host
     # --ip-header : IP réelle du client dans les logs (fiable car /t n'écoute qu'en
     # local, derrière cloudflared qui écrase CF-Connecting-IP)
-    command: --host 127.0.0.1 --port 8081 --allow 127.0.0.1:22 --allow udp:127.0.0.1:60001-60004 --ip-header CF-Connecting-IP --web web
+    command: --host 127.0.0.1 --port 8081 --allow 127.0.0.1:22 --allow udp:127.0.0.1:60001-60004 --ip-header CF-Connecting-IP
     env_file: .env   # POLLUX_TOKEN (secret partagé), POLLUX_ALLOW_IP
     restart: unless-stopped
 
@@ -24,3 +26,44 @@ services:
     restart: unless-stopped
     depends_on:
       - pollux
+
+  # Client web (terminal SSH dans le navigateur) réservé aux comptes Google de
+  # web.env ; /t reste protégé par le seul jeton. Instance séparée : sans
+  # --ip-header ni POLLUX_ALLOW_IP, car derrière Funnel un CF-Connecting-IP forgé
+  # contournerait le filtre d'IP.
+  pollux-web:
+    image: pollux:local
+    pull_policy: never
+    container_name: pollux-web
+    network_mode: host
+    command: --host 127.0.0.1 --port 8082 --allow 127.0.0.1:22 --web web
+    env_file:
+      - .env       # POLLUX_TOKEN
+      - web.env    # POLLUX_OIDC_* (client OAuth, URL publique, e-mails autorisés)
+    environment:
+      POLLUX_ALLOW_IP: ""
+    restart: unless-stopped
+    depends_on:
+      - pollux
+
+  # Nœud Tailscale dédié : Funnel publie pollux-web sur https://pollux.<tailnet>.ts.net
+  # (port 443 ; celui de pidesk sert Vaultwarden au seul tailnet). Userspace :
+  # pas de /dev/net/tun ; réseau de l'hôte pour joindre 127.0.0.1:8082.
+  pollux-web-ts:
+    image: tailscale/tailscale:v1.102.4
+    container_name: pollux-web-ts
+    network_mode: host
+    env_file: ts.env   # TS_AUTHKEY (premier démarrage seulement)
+    environment:
+      TS_HOSTNAME: pollux
+      TS_USERSPACE: "true"
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SOCKET: /var/lib/tailscale/tailscaled.sock   # pas celui du tailscaled de l'hôte
+      TS_TAILSCALED_EXTRA_ARGS: --port=41642          # 41641 : tailscaled de l'hôte
+      TS_SERVE_CONFIG: /config/serve.json
+    volumes:
+      - ./ts-state:/var/lib/tailscale
+      - ./serve.json:/config/serve.json:ro
+    restart: unless-stopped
+    depends_on:
+      - pollux-web

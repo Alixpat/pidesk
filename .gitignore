@@ -15,8 +15,11 @@ ttn-bridge/config.json
 ttn-bridge/venv/
 ttn-bridge/__pycache__/
 
-# Secret pollux, seul .env.example est versionné
+# Secrets pollux (seuls les .example sont versionnés), état du nœud Tailscale
 pollux/.env
+pollux/web.env
+pollux/ts.env
+pollux/ts-state/
 
 # Ansible : inventaire réel, mot de passe et contenu du vault restent locaux
 ansible/inventory.yml
