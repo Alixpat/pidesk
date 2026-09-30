@@ -18,15 +18,17 @@ ip=$(curl -fsS --max-time 15 https://api.ipify.org 2>/dev/null ||
 # réseau coupé ou réponse invalide : ne rien toucher
 python3 -c 'import ipaddress,sys; ipaddress.ip_address(sys.argv[1])' "${ip:-x}" 2>/dev/null || exit 0
 
-[ "$(head -n1 "$AUTO" 2>/dev/null)" = "$ip" ] && exit 0
-{ echo "$ip"; grep -vxF "$ip" "$AUTO" 2>/dev/null || true; } | head -n "$MAX_AUTO" > "$AUTO.new"
-mv "$AUTO.new" "$AUTO"
+if [ "$(head -n1 "$AUTO" 2>/dev/null)" != "$ip" ]; then
+  { echo "$ip"; grep -vxF "$ip" "$AUTO" 2>/dev/null || true; } | head -n "$MAX_AUTO" > "$AUTO.new"
+  mv "$AUTO.new" "$AUTO"
+fi
 
-# liste triée : une IP déjà connue qui revient ne change rien (pas de redémarrage)
+# recalculée à chaque passage : une modification de POLLUX_ALLOW_IP_FIXE s'applique
+# dans la minute ; triée : une IP déjà connue qui revient ne change rien
 fixe=$(sed -n 's/^POLLUX_ALLOW_IP_FIXE=//p' "$ENV")
 liste=$({ tr ',' '\n' <<<"$fixe"; sort "$AUTO"; } | sed 's/[[:space:]]//g; /^$/d' | awk '!vu[$0]++' | paste -sd,)
 grep -qxF "POLLUX_ALLOW_IP=$liste" "$ENV" && exit 0
 
 sed -i "s|^POLLUX_ALLOW_IP=.*|POLLUX_ALLOW_IP=$liste|" "$ENV"
-echo "IP publique $ip autorisée ; POLLUX_ALLOW_IP=$liste"
+echo "IP autorisées mises à jour (IP publique de la maison : $ip) : $liste"
 docker compose --project-directory "$DIR" up -d pollux 2>&1 | tail -n1
