@@ -649,7 +649,8 @@ client pollux / navigateur ─(proxy)─▶ Tailscale Funnel (https://pollux.<TA
   générée chaque minute par `pollux-allow-ip` (rôle Ansible `pollux_allow_ip`) :
   `POLLUX_ALLOW_IP_FIXE` (IP hors de la maison, à éditer à la main) + les 5 dernières IP
   publiques de la maison (`allow-ip-auto`), que le Pi partage avec les appareils de la
-  box 4G. Pollux n'est redémarré que si la liste change.
+  box 4G. Pollux n'est redémarré que si la liste change ; `pollux-ts` l'est à chaque
+  nouvelle IP publique, sinon les relais Funnel coupent le TLS (le nom reste publié).
 - **Jeton** `POLLUX_TOKEN` : signe requêtes et réponses sans jamais circuler (invisible
   même pour un proxy qui déchiffre le TLS). Changer le secret : `openssl rand -hex 32`
   dans le `.env` du Pi et des clients, puis redémarrer `pollux` et les clients.
@@ -695,7 +696,7 @@ sont injoignables.
 cd ansible && ansible-playbook site.yml --tags pollux_funnel_watch
 ssh pidesk 'journalctl -t pollux-funnel-watch'     # silencieux tant que le nom est publié
 ansible-playbook site.yml --tags pollux_allow_ip
-ssh pidesk 'journalctl -t pollux-allow-ip'         # « IP publique … autorisée » à chaque changement
+ssh pidesk 'journalctl -t pollux-allow-ip'         # « nouvelle IP publique … » à chaque changement
 ```
 
 Mise à jour : `build.sh` + `rsync` ci-dessus, puis rebuild. Client et serveur doivent
