@@ -1,0 +1,32 @@
+#!/bin/bash
+# Autorise dans pollux l'IP publique de la maison (box 4G, IP changeante) : le Pi
+# et les appareils de la maison sortent par la même IP.
+# POLLUX_ALLOW_IP = POLLUX_ALLOW_IP_FIXE (.env, jamais modifiée par ce script)
+#                 + les MAX_AUTO dernières IP vues (allow-ip-auto, récente en tête).
+# Variables : POLLUX_DIR (dossier du compose), MAX_AUTO (défaut 5).
+set -eu
+DIR=${POLLUX_DIR:?POLLUX_DIR manquant}
+MAX_AUTO=${MAX_AUTO:-5}
+ENV="$DIR/.env"
+AUTO="$DIR/allow-ip-auto"
+
+grep -q '^POLLUX_ALLOW_IP_FIXE=' "$ENV" || {
+  echo "POLLUX_ALLOW_IP_FIXE absente de $ENV : rien n'est modifié" >&2; exit 1; }
+
+ip=$(curl -fsS --max-time 15 https://api.ipify.org 2>/dev/null ||
+     curl -fsS --max-time 15 https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null | sed -n 's/^ip=//p') || true
+# réseau coupé ou réponse invalide : ne rien toucher
+python3 -c 'import ipaddress,sys; ipaddress.ip_address(sys.argv[1])' "${ip:-x}" 2>/dev/null || exit 0
+
+[ "$(head -n1 "$AUTO" 2>/dev/null)" = "$ip" ] && exit 0
+{ echo "$ip"; grep -vxF "$ip" "$AUTO" 2>/dev/null || true; } | head -n "$MAX_AUTO" > "$AUTO.new"
+mv "$AUTO.new" "$AUTO"
+
+# liste triée : une IP déjà connue qui revient ne change rien (pas de redémarrage)
+fixe=$(sed -n 's/^POLLUX_ALLOW_IP_FIXE=//p' "$ENV")
+liste=$({ tr ',' '\n' <<<"$fixe"; sort "$AUTO"; } | sed 's/[[:space:]]//g; /^$/d' | awk '!vu[$0]++' | paste -sd,)
+grep -qxF "POLLUX_ALLOW_IP=$liste" "$ENV" && exit 0
+
+sed -i "s|^POLLUX_ALLOW_IP=.*|POLLUX_ALLOW_IP=$liste|" "$ENV"
+echo "IP publique $ip autorisée ; POLLUX_ALLOW_IP=$liste"
+docker compose --project-directory "$DIR" up -d pollux 2>&1 | tail -n1

@@ -1,0 +1,6 @@
+---
+# IP publique de la maison ajoutée automatiquement aux IP autorisées de pollux
+# (cf. files/pollux-allow-ip).
+pollux_allow_ip_dir: "/home/{{ ansible_user }}/pidesk/pollux"
+pollux_allow_ip_interval: 1min
+pollux_allow_ip_max_auto: 5

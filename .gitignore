@@ -20,6 +20,7 @@ pollux/.env
 pollux/web.env
 pollux/ts.env
 pollux/ts-state/
+pollux/allow-ip-auto
 
 # Ansible : inventaire réel, mot de passe et contenu du vault restent locaux
 ansible/inventory.yml

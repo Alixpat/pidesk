@@ -6,3 +6,4 @@
   roles:
     - { role: mosh, tags: [mosh] }
     - { role: pollux_funnel_watch, tags: [pollux_funnel_watch, pollux] }
+    - { role: pollux_allow_ip, tags: [pollux_allow_ip, pollux] }

@@ -1,0 +1,14 @@
+# Géré par Ansible (rôle pollux_allow_ip).
+[Unit]
+Description=Autorisation de l'IP publique de la maison dans pollux
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# propriétaire du .env (et membre du groupe docker) : les fichiers gardent leur propriétaire
+User={{ ansible_user }}
+Environment=POLLUX_DIR={{ pollux_allow_ip_dir }}
+Environment=MAX_AUTO={{ pollux_allow_ip_max_auto }}
+ExecStart=/usr/local/bin/pollux-allow-ip
+SyslogIdentifier=pollux-allow-ip

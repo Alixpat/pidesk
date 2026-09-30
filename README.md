@@ -645,8 +645,11 @@ client pollux / navigateur ─(proxy)─▶ Tailscale Funnel (https://pollux.<TA
 
 - Débit ≈ fenêtre × lot / RTT (`POLLUX_WINDOW`, 8 requêtes en vol par défaut).
 - **IP clientes** (`POLLUX_ALLOW_IP` dans `.env`) : lues dans `X-Forwarded-For`, que
-  Funnel remplace par l'IP réelle (un en-tête forgé est écrasé ; vérifié). IP 4G
-  changeante : l'ajouter à la liste puis `docker compose up -d pollux`.
+  Funnel remplace par l'IP réelle (un en-tête forgé est écrasé ; vérifié). Liste
+  générée chaque minute par `pollux-allow-ip` (rôle Ansible `pollux_allow_ip`) :
+  `POLLUX_ALLOW_IP_FIXE` (IP hors de la maison, à éditer à la main) + les 5 dernières IP
+  publiques de la maison (`allow-ip-auto`), que le Pi partage avec les appareils de la
+  box 4G. Pollux n'est redémarré que si la liste change.
 - **Jeton** `POLLUX_TOKEN` : signe requêtes et réponses sans jamais circuler (invisible
   même pour un proxy qui déchiffre le TLS). Changer le secret : `openssl rand -hex 32`
   dans le `.env` du Pi et des clients, puis redémarrer `pollux` et les clients.
@@ -669,7 +672,7 @@ rsync -a --delete --exclude .venv --exclude .git ~/Documents/pollux/ pidesk:~/po
 cd ~/pidesk/pollux
 for f in .env web.env ts.env; do cp $f.example $f; done && chmod 600 .env web.env ts.env
 sed -i "s/<SECRET>/$(openssl rand -hex 32)/" .env
-$EDITOR .env web.env ts.env     # IP autorisées, client Google, clé Tailscale (ci-dessous)
+$EDITOR .env web.env ts.env     # IP fixes, client Google, clé Tailscale (ci-dessous)
 docker compose up -d --build    # build l'image depuis ~/pollux, lance pollux + pollux-ts
 ```
 
@@ -691,6 +694,8 @@ sont injoignables.
 ```bash
 cd ansible && ansible-playbook site.yml --tags pollux_funnel_watch
 ssh pidesk 'journalctl -t pollux-funnel-watch'     # silencieux tant que le nom est publié
+ansible-playbook site.yml --tags pollux_allow_ip
+ssh pidesk 'journalctl -t pollux-allow-ip'         # « IP publique … autorisée » à chaque changement
 ```
 
 Mise à jour : `build.sh` + `rsync` ci-dessus, puis rebuild. Client et serveur doivent

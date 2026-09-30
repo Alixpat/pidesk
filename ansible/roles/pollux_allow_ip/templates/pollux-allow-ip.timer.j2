@@ -1,0 +1,10 @@
+# Géré par Ansible (rôle pollux_allow_ip).
+[Unit]
+Description=Autorisation de l'IP publique de la maison dans pollux ({{ pollux_allow_ip_interval }})
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec={{ pollux_allow_ip_interval }}
+
+[Install]
+WantedBy=timers.target
