@@ -5,3 +5,4 @@
   become: true
   roles:
     - { role: mosh, tags: [mosh] }
+    - { role: pollux_funnel_watch, tags: [pollux_funnel_watch, pollux] }

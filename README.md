@@ -680,7 +680,18 @@ docker compose up -d --build    # build l'image depuis ~/pollux, lance pollux + 
 3. Client OAuth Google « Application Web », redirection
    `https://pollux.<TAILNET>.ts.net/oidc/callback` → `web.env`.
 
-L'enregistrement DNS public du nom Funnel peut mettre ~20 min à apparaître.
+L'enregistrement DNS public du nom Funnel peut mettre ~20 min à apparaître. Tailscale
+le retire parfois alors que Funnel reste actif (NXDOMAIN, [#20892](https://github.com/tailscale/tailscale/issues/20892),
+[#21429](https://github.com/tailscale/tailscale/issues/21429)) : un timer (rôle Ansible
+`pollux_funnel_watch`, toutes les 5 min) interroge Google et Cloudflare en DoH et, si le
+nom manque chez les deux, redémarre `pollux-ts` (republié en ~30 s) puis vide le cache
+d'Unbound et de Pi-hole. 15 min au moins entre deux redémarrages ; rien si les résolveurs
+sont injoignables.
+
+```bash
+cd ansible && ansible-playbook site.yml --tags pollux_funnel_watch
+ssh pidesk 'journalctl -t pollux-funnel-watch'     # silencieux tant que le nom est publié
+```
 
 Mise à jour : `build.sh` + `rsync` ci-dessus, puis rebuild. Client et serveur doivent
 parler la même version de protocole (sinon `CONNECT refusé: version`).

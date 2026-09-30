@@ -1,0 +1,11 @@
+# Géré par Ansible (rôle pollux_funnel_watch).
+[Unit]
+Description=Surveillance du nom public Funnel de pollux
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=COOLDOWN={{ pollux_funnel_watch_cooldown }}
+ExecStart=/usr/local/bin/pollux-funnel-watch
+SyslogIdentifier=pollux-funnel-watch

@@ -1,0 +1,5 @@
+---
+# Surveillance du nom public Funnel de pollux (cf. files/pollux-funnel-watch).
+pollux_funnel_watch_interval: 5min
+# Délai minimal entre deux redémarrages de pollux-ts (secondes).
+pollux_funnel_watch_cooldown: 900

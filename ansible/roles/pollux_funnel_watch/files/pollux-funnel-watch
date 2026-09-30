@@ -1,0 +1,45 @@
+#!/bin/bash
+# Surveille le nom public Funnel de pollux : Tailscale le retire parfois du DNS
+# public alors que Funnel reste actif (tailscale/tailscale#20892, #21429).
+# Redémarrer pollux-ts le fait republier. DNS-over-HTTPS : le DNS clair est
+# parasité par le réseau mobile.
+# Variables : COOLDOWN (s, défaut 900), POLLUX_WATCH_NAME (test), DRY_RUN=1 (test).
+set -u
+COOLDOWN=${COOLDOWN:-900}
+TS="docker exec pollux-ts tailscale --socket /var/lib/tailscale/tailscaled.sock"
+
+NAME=${POLLUX_WATCH_NAME:-$($TS status --json 2>/dev/null | python3 -c \
+  'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))' 2>/dev/null)}
+[ -n "$NAME" ] || { echo "nom du nœud introuvable (pollux-ts arrêté ?)"; exit 0; }
+
+# present | absent | "" (résolveur injoignable ou réponse illisible)
+lookup() {
+  curl -fsS --max-time 15 -H 'accept: application/dns-json' "$1?name=$NAME&type=A" 2>/dev/null |
+    python3 -c 'import json,sys
+d=json.load(sys.stdin)
+print("present" if any(a.get("type")==1 for a in d.get("Answer") or []) else "absent" if d.get("Status") in (0,3) else "")' 2>/dev/null
+}
+
+g=$(lookup https://dns.google/resolve)
+c=$(lookup https://cloudflare-dns.com/dns-query)
+[ "$g" = absent ] && [ "$c" = absent ] || exit 0
+
+started=$(date -d "$(docker inspect -f '{{.State.StartedAt}}' pollux-ts)" +%s)
+if (( $(date +%s) - started < COOLDOWN )); then
+  echo "$NAME absent du DNS public, pollux-ts redémarré il y a moins de ${COOLDOWN} s : attente"
+  exit 0
+fi
+echo "$NAME absent du DNS public (Google et Cloudflare) : redémarrage de pollux-ts"
+[ "${DRY_RUN:-}" = 1 ] && { echo "DRY_RUN : rien n'est fait"; exit 0; }
+docker restart pollux-ts >/dev/null
+for _ in $(seq 1 18); do
+  sleep 10
+  if [ "$(lookup https://dns.google/resolve)" = present ]; then
+    echo "$NAME republié"
+    # réponse négative gardée en cache sur le Pi (Unbound, Pi-hole) : la vider
+    unbound-control flush "$NAME" >/dev/null 2>&1
+    docker exec pihole pihole reloaddns >/dev/null 2>&1
+    exit 0
+  fi
+done
+echo "$NAME toujours absent 3 min après le redémarrage (nouvel essai après ${COOLDOWN} s)"

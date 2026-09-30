@@ -1,0 +1,10 @@
+# Géré par Ansible (rôle pollux_funnel_watch).
+[Unit]
+Description=Surveillance du nom public Funnel de pollux ({{ pollux_funnel_watch_interval }})
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec={{ pollux_funnel_watch_interval }}
+
+[Install]
+WantedBy=timers.target
