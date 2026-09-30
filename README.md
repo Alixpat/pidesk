@@ -647,8 +647,8 @@ client pollux / navigateur ─(proxy)─▶ Tailscale Funnel (https://pollux.<TA
 - **IP clientes** (`POLLUX_ALLOW_IP` dans `.env`) : lues dans `X-Forwarded-For`, que
   Funnel remplace par l'IP réelle (un en-tête forgé est écrasé ; vérifié). Liste
   générée chaque minute par `pollux-allow-ip` (rôle Ansible `pollux_allow_ip`) :
-  `POLLUX_ALLOW_IP_FIXE` (IP hors de la maison, à éditer à la main) + les 5 dernières IP
-  publiques de la maison (`allow-ip-auto`), que le Pi partage avec les appareils de la
+  `POLLUX_ALLOW_IP_FIXE` (IP hors de la maison, à éditer à la main) + l'IP publique
+  actuelle de la maison (`allow-ip-auto`), que le Pi partage avec les appareils de la
   box 4G. Pollux n'est redémarré que si la liste change ; `pollux-ts` l'est à chaque
   nouvelle IP publique, sinon les relais Funnel coupent le TLS (le nom reste publié).
 - **Jeton** `POLLUX_TOKEN` : signe requêtes et réponses sans jamais circuler (invisible

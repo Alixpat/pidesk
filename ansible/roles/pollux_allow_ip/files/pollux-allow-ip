@@ -5,10 +5,10 @@
 #                 + les MAX_AUTO dernières IP vues (allow-ip-auto, récente en tête).
 # Nouvelle IP : pollux-ts est redémarré, sinon les relais Funnel gardent un état
 # périmé et coupent le TLS (le nom reste pourtant dans le DNS public).
-# Variables : POLLUX_DIR (dossier du compose), MAX_AUTO (défaut 5).
+# Variables : POLLUX_DIR (dossier du compose), MAX_AUTO (défaut 1).
 set -eu
 DIR=${POLLUX_DIR:?POLLUX_DIR manquant}
-MAX_AUTO=${MAX_AUTO:-5}
+MAX_AUTO=${MAX_AUTO:-1}
 ENV="$DIR/.env"
 AUTO="$DIR/allow-ip-auto"
 
@@ -20,9 +20,11 @@ ip=$(curl -fsS --max-time 15 https://api.ipify.org 2>/dev/null ||
 # réseau coupé ou réponse invalide : ne rien toucher
 python3 -c 'import ipaddress,sys; ipaddress.ip_address(sys.argv[1])' "${ip:-x}" 2>/dev/null || exit 0
 
-if [ "$(head -n1 "$AUTO" 2>/dev/null)" != "$ip" ]; then
-  { echo "$ip"; grep -vxF "$ip" "$AUTO" 2>/dev/null || true; } | head -n "$MAX_AUTO" > "$AUTO.new"
-  mv "$AUTO.new" "$AUTO"
+precedente=$(head -n1 "$AUTO" 2>/dev/null || true)
+# réécrite à chaque passage : une baisse de MAX_AUTO s'applique aussitôt
+{ echo "$ip"; grep -vxF "$ip" "$AUTO" 2>/dev/null || true; } | head -n "$MAX_AUTO" > "$AUTO.new"
+mv "$AUTO.new" "$AUTO"
+if [ "$precedente" != "$ip" ]; then
   echo "nouvelle IP publique $ip : redémarrage de pollux-ts"
   docker restart pollux-ts >/dev/null
 fi
