@@ -15,6 +15,11 @@ ttn-bridge/config.json
 ttn-bridge/venv/
 ttn-bridge/__pycache__/
 
+# Conf owntracks-archive (Python) avec secrets, seul .example est versionné
+owntracks-archive/config.json
+owntracks-archive/venv/
+owntracks-archive/__pycache__/
+
 # Secrets pollux (seuls les .example sont versionnés), état du nœud Tailscale
 pollux/.env
 pollux/web.env

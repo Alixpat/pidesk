@@ -1,0 +1,14 @@
+[Unit]
+Description=OwnTracks Archive - archivage SQLite des positions OwnTracks
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__WORKING_DIR__
+ExecStart=__WORKING_DIR__/venv/bin/python3 owntracks_archive.py /etc/owntracks-archive/config.json
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

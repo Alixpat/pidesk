@@ -1,0 +1,12 @@
+{
+  "mqtt": {
+    "broker": "127.0.0.1",
+    "port": 1883,
+    "username": "<MQTT_USER>",
+    "password": "<MQTT_PASSWORD>",
+    "client_id": "owntracks-archive-pidesk",
+    "topic": "owntracks/#"
+  },
+  "db_path": "/var/lib/owntracks-archive/positions.db",
+  "retention_days": null
+}

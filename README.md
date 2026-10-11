@@ -627,6 +627,82 @@ docker compose restart                            # Redémarrer
 
 ---
 
+## OwnTracks Archive — historique des positions
+
+Service Python (paho-mqtt + systemd) qui archive dans une base SQLite les
+messages OwnTracks publiés sur le broker MQTT (`owntracks/#`) : positions,
+points d'intérêt et transitions. Le payload brut est conservé. Le code est
+dans le répertoire [`owntracks-archive/`](owntracks-archive/) du dépôt.
+
+```
+App OwnTracks → MQTT (Mosquitto) → owntracks-archive → SQLite (/var/lib/owntracks-archive/)
+```
+
+| Table | Contenu |
+|---|---|
+| `locations` | un point par message `_type=location` (lat, lon, tst, batt, acc…) |
+| `waypoints` | points d'intérêt (`_type=waypoint`) |
+| `transitions` | entrées/sorties de zones (`_type=transition`) |
+
+> Mosquitto opérationnel (voir section précédente). Le service s'abonne en
+> qos 1 avec `clean_session=false` : rien n'est perdu pendant ses arrêts.
+
+### Installation
+
+1. Créer un utilisateur MQTT dédié (compte séparé, révocable sans toucher
+   aux autres clients) :
+   ```bash
+   cd ~/pidesk/mosquitto
+   docker run --rm -v $(pwd)/config:/data eclipse-mosquitto:2.1.2-alpine \
+     mosquitto_passwd -b /data/passwd owntracks-archive <PASSWORD>
+   docker compose restart mosquitto
+   ```
+2. Sur le Pi :
+   ```bash
+   cd ~/pidesk/owntracks-archive
+   cp config.json.example config.json
+   # éditer config.json : <MQTT_USER> / <MQTT_PASSWORD> ;
+   # si le broker n'est pas local, changer aussi "broker" ;
+   # retention_days (null = garder indéfiniment)
+   sudo bash install.sh
+   ```
+   `install.sh` crée le venv, installe `paho-mqtt`, copie `config.json` vers
+   `/etc/owntracks-archive/`, crée `/var/lib/owntracks-archive/`, génère le
+   service systemd et l'active.
+
+### Vérification
+
+```bash
+systemctl status owntracks-archive   # doit être active (running)
+journalctl -u owntracks-archive -f   # doit montrer "Archivé owntracks/…" à chaque position
+
+# Depuis l'app OwnTracks, envoyer une position (mode auto ou bouton "report"),
+# puis contrôler la base :
+sudo sqlite3 /var/lib/owntracks-archive/positions.db \
+  "SELECT datetime(tst,'unixepoch'), user, device, lat, lon FROM locations ORDER BY tst DESC LIMIT 5;"
+```
+
+### Commandes utiles
+
+```bash
+# Export CSV des positions d'une journée
+sudo sqlite3 -header -csv /var/lib/owntracks-archive/positions.db \
+  "SELECT * FROM locations WHERE tst >= strftime('%s','now','-1 day');" > trace.csv
+
+# Statistiques par appareil
+sudo sqlite3 /var/lib/owntracks-archive/positions.db \
+  "SELECT user, device, COUNT(*), datetime(MIN(tst),'unixepoch'), datetime(MAX(tst),'unixepoch') FROM locations GROUP BY user, device;"
+
+sudo systemctl restart owntracks-archive      # après un changement de config
+```
+
+> Le fichier `owntracks-archive/config.json` (avec le mot de passe) est
+> gitignoré ; seul `config.json.example` est versionné. La base SQLite est
+> copiable à froid avec `sqlite3 positions.db ".backup …"` (comme
+> `vaultwarden/backup.sh`).
+
+---
+
 ## pollux — SSH via requêtes HTTP courtes
 
 SSH et mosh du Pi malgré le CGNAT 4G : chaque échange est une **requête/réponse
