@@ -645,7 +645,8 @@ App OwnTracks → MQTT (Mosquitto) → owntracks-archive → SQLite (/var/lib/ow
 | `transitions` | entrées/sorties de zones (`_type=transition`) |
 
 > Mosquitto opérationnel (voir section précédente). Le service s'abonne en
-> qos 1 avec `clean_session=false` : rien n'est perdu pendant ses arrêts.
+> qos 1 avec `clean_session=false` : rien n'est perdu pendant ses arrêts ;
+> les relivrasons du broker sont ignorées (index unique `user, device, tst`).
 
 ### Installation
 
@@ -655,7 +656,10 @@ App OwnTracks → MQTT (Mosquitto) → owntracks-archive → SQLite (/var/lib/ow
    cd ~/pidesk/mosquitto
    docker run --rm -v $(pwd)/config:/data eclipse-mosquitto:2.1.2-alpine \
      mosquitto_passwd -b /data/passwd owntracks-archive <PASSWORD>
-   docker compose restart mosquitto
+   sudo chown 1883:1883 config/passwd
+   # SIGHUP recharge le passwd sans redémarrer le conteneur : pas de coupure
+   # pour les autres clients (vigie, zigbee2mqtt, ttn-bridge).
+   docker kill --signal=HUP mosquitto
    ```
 2. Sur le Pi :
    ```bash
@@ -676,8 +680,13 @@ App OwnTracks → MQTT (Mosquitto) → owntracks-archive → SQLite (/var/lib/ow
 systemctl status owntracks-archive   # doit être active (running)
 journalctl -u owntracks-archive -f   # doit montrer "Archivé owntracks/…" à chaque position
 
-# Depuis l'app OwnTracks, envoyer une position (mode auto ou bouton "report"),
-# puis contrôler la base :
+# Demander une position immédiate au téléphone (l'app répond sur son topic,
+# sous réserve qu'elle soit joignable en arrière-plan) :
+mosquitto_pub -h localhost -u <USER> -P <PASSWORD> \
+  -t owntracks/<user>/<device>/cmd -q 1 \
+  -m '{"_type":"cmd","action":"report"}'
+
+# Puis contrôler la base :
 sudo sqlite3 /var/lib/owntracks-archive/positions.db \
   "SELECT datetime(tst,'unixepoch'), user, device, lat, lon FROM locations ORDER BY tst DESC LIMIT 5;"
 ```
