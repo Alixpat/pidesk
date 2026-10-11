@@ -10,6 +10,7 @@ import json
 import logging
 import signal
 import sqlite3
+import threading
 import time
 
 import paho.mqtt.client as mqtt
@@ -22,6 +23,8 @@ log = logging.getLogger("owntracks-archive")
 
 running = True
 last_prune = 0.0
+# Les inserts arrivent du thread réseau de paho, la purge du thread principal.
+db_lock = threading.Lock()
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS locations (
@@ -40,6 +43,9 @@ CREATE TABLE IF NOT EXISTS locations (
     received REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_locations_tst ON locations (tst);
+-- Relivraison qos 1 (redémarrage du service, session persistante) :
+-- ignorer plutôt que stocker deux fois le même point.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_locations ON locations (user, device, tst);
 
 CREATE TABLE IF NOT EXISTS waypoints (
     tst      INTEGER NOT NULL,
@@ -65,6 +71,15 @@ CREATE TABLE IF NOT EXISTS transitions (
     received REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_transitions_tst ON transitions (tst);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_transitions ON transitions (user, device, tst, event);
+"""
+
+# Repli de migration : dédoublonner avant de poser l'index unique.
+DEDUP = """
+DELETE FROM locations WHERE rowid NOT IN
+    (SELECT MIN(rowid) FROM locations GROUP BY user, device, tst);
+DELETE FROM transitions WHERE rowid NOT IN
+    (SELECT MIN(rowid) FROM transitions GROUP BY user, device, tst, event);
 """
 
 
@@ -79,10 +94,17 @@ signal.signal(signal.SIGTERM, handle_signal)
 
 
 def open_db(path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
+    # paho livre les messages dans son thread réseau : autoriser le partage
+    # de la connexion, l'accès concurrent est sérialisé par db_lock.
+    conn = sqlite3.connect(path, check_same_thread=False)
     # WAL : le service écrit pendant que des requêtes sqlite3 en CLI lisent.
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.executescript(SCHEMA)
+    try:
+        conn.executescript(SCHEMA)
+    except sqlite3.IntegrityError:
+        # base antérieure contenant des doublons : dédoublonner puis repasser
+        # le schéma (l'index unique peut maintenant être posé)
+        conn.executescript(DEDUP + SCHEMA)
     conn.commit()
     return conn
 
@@ -91,12 +113,13 @@ def prune(conn: sqlite3.Connection, retention_days) -> None:
     if not retention_days:
         return
     cutoff = time.time() - retention_days * 86400
-    cur = conn.cursor()
-    for table in ("locations", "waypoints", "transitions"):
-        cur.execute(f"DELETE FROM {table} WHERE COALESCE(tst, received) < ?", (cutoff,))
-        if cur.rowcount:
-            log.info("Purge %s : %d ligne(s) de plus de %d j", table, cur.rowcount, retention_days)
-    conn.commit()
+    with db_lock:
+        cur = conn.cursor()
+        for table in ("locations", "waypoints", "transitions"):
+            cur.execute(f"DELETE FROM {table} WHERE COALESCE(tst, received) < ?", (cutoff,))
+            if cur.rowcount:
+                log.info("Purge %s : %d ligne(s) de plus de %d j", table, cur.rowcount, retention_days)
+        conn.commit()
 
 
 def handle_message(conn: sqlite3.Connection, topic: str, payload: bytes) -> None:
@@ -123,41 +146,49 @@ def handle_message(conn: sqlite3.Connection, topic: str, payload: bytes) -> None
     if mtype == "location":
         if "lat" not in msg or "lon" not in msg:
             return
-        conn.execute(
-            "INSERT INTO locations (tst, user, device, lat, lon, acc, batt, bs,"
-            " vel, alt, tid, payload, received) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                msg.get("tst", int(now)), user, device,
-                msg.get("lat"), msg.get("lon"),
-                msg.get("acc"), msg.get("batt"), msg.get("bs"),
-                msg.get("vel"), msg.get("alt"), msg.get("tid"), raw, now,
-            ),
-        )
+        with db_lock:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO locations (tst, user, device, lat, lon, acc, batt, bs,"
+                " vel, alt, tid, payload, received) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    msg.get("tst", int(now)), user, device,
+                    msg.get("lat"), msg.get("lon"),
+                    msg.get("acc"), msg.get("batt"), msg.get("bs"),
+                    msg.get("vel"), msg.get("alt"), msg.get("tid"), raw, now,
+                ),
+            )
     elif mtype == "waypoint":
         if "lat" not in msg or "lon" not in msg:
             return
-        conn.execute(
-            "INSERT INTO waypoints (tst, user, device, lat, lon, rad, name,"
-            " payload, received) VALUES (?,?,?,?,?,?,?,?,?)",
-            (
-                msg.get("tst", int(now)), user, device,
-                msg.get("lat"), msg.get("lon"), msg.get("rad"), msg.get("name"),
-                raw, now,
-            ),
-        )
+        with db_lock:
+            cur = conn.execute(
+                "INSERT INTO waypoints (tst, user, device, lat, lon, rad, name,"
+                " payload, received) VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    msg.get("tst", int(now)), user, device,
+                    msg.get("lat"), msg.get("lon"), msg.get("rad"), msg.get("name"),
+                    raw, now,
+                ),
+            )
     elif mtype == "transition":
-        conn.execute(
-            "INSERT INTO transitions (tst, user, device, event, lat, lon, tid,"
-            " payload, received) VALUES (?,?,?,?,?,?,?,?,?)",
-            (
-                msg.get("tst"), user, device, msg.get("event"),
-                msg.get("lat"), msg.get("lon"), msg.get("tid"), raw, now,
-            ),
-        )
+        with db_lock:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO transitions (tst, user, device, event, lat, lon, tid,"
+                " payload, received) VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    msg.get("tst"), user, device, msg.get("event"),
+                    msg.get("lat"), msg.get("lon"), msg.get("tid"), raw, now,
+                ),
+            )
     else:
         return
-    conn.commit()
-    log.info("Archivé %s (%s) tst=%s", topic, mtype, msg.get("tst"))
+    with db_lock:
+        conn.commit()
+    if cur.rowcount:
+        log.info("Archivé %s (%s) tst=%s", topic, mtype, msg.get("tst"))
+    else:
+        # relivraison qos 1 d'un message déjà en base
+        log.debug("Doublon ignoré : %s tst=%s", topic, msg.get("tst"))
 
 
 def main() -> None:
